@@ -1,4 +1,5 @@
 import os from 'node:os';
+import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
@@ -170,10 +171,12 @@ export async function buildServer(): Promise<FastifyInstance> {
     passwordRequired: !!store.getAppSettings().general.dashboardPassword,
   }));
 
-  // Only from this PC: used by stop.bat
-  app.post('/api/shutdown', async (req, reply) => {
-    if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip)) return reply.code(403).send({ error: 'Only from this computer' });
-    setTimeout(() => process.emit('SIGTERM' as any), 100);
+  // Stop the whole app: dashboard Stop button and `launch.mjs --stop`. Protected by the dashboard
+  // password (if set) like every other control. Writes stop.flag so the supervisor doesn't restart it.
+  app.post('/api/shutdown', async req => {
+    log('info', 'app', `Stop requested from ${req.ip}`);
+    try { fs.writeFileSync(path.join(paths.data, 'stop.flag'), 'stop'); } catch { /* */ }
+    setTimeout(() => process.emit('SIGTERM' as any), 300);
     return { ok: true };
   });
 

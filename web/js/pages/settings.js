@@ -25,6 +25,11 @@ export function SettingsPage() {
   const [info, setInfo] = useState(null);
   const [withMemory, setWithMemory] = useState(true);
   useEffect(() => { get('/api/info').then(setInfo).catch(() => {}); }, []);
+  const stopApp = guard(async () => {
+    if (!confirm('Stop the whole app? You will need the TikTok Agent shortcut on your PC to start it again.')) return;
+    await post('/api/shutdown');
+    document.body.innerHTML = '<div style="font:16px system-ui;padding:40px;text-align:center"><h2>The app is stopped</h2><p>Start it again with the <b>TikTok Agent</b> shortcut on your PC.</p></div>';
+  });
   const exportFile = guard(async () => {
     const res = await fetch(`/api/export?memory=${withMemory ? 1 : 0}`, { headers: { 'x-dashboard-token': getToken() } });
     if (!res.ok) throw new Error('Export failed');
@@ -41,6 +46,10 @@ export function SettingsPage() {
     ${info ? html`<section class="card"><h3>Open on your phone</h3>
       <p>Same Wi-Fi: ${info.lan.map(ip => html`<code>http://${ip}:${location.port || 80}</code> `)}</p>
       <p class="help">If it doesn't open, allow Node.js through Windows Firewall (see README). Set a dashboard password below if others use your Wi-Fi.</p></section>` : null}
+    <section class="card"><h3>Stop the app</h3>
+      <p class="help">Stops watching, closes the agent's Edge window and shuts the app down. Start it again with the <b>TikTok Agent</b> shortcut on your PC.</p>
+      <button class="btn danger" onClick=${stopApp}>⏻ Stop the app</button>
+    </section>
     <section class="card"><h3>Backup</h3>
       <p class="help">Export/import all presets, prompts and settings as JSON. API keys and passwords are never exported.</p>
       <div class="row wrap">

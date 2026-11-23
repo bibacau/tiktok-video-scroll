@@ -27,22 +27,30 @@ Everything is a setting: what to watch, when and for how long, what to save, the
    cd tiktok-agent
    ```
    To update later: `git pull` inside that folder.
-5. **Start it.** Either double-click **`start.bat`**, or start it without any .bat file, which always works even if Windows blocks .bat files:
+5. **Start it the first time** from that same terminal. Smart App Control can't block this: it only runs `node.exe`, which is signed. No .bat, .cmd or PowerShell script is involved.
    ```powershell
-   npm install --omit=dev
-   npm start
+   node scripts/launch.mjs
    ```
-   Keep that window open; press **Ctrl+C** to stop. Then open http://localhost:8004.
-6. **DeepSeek API key:** create one at https://platform.deepseek.com, add a little credit, then paste the key in *AI & Prompts → AI provider → API key* and press **Save**. Press **Test AI connection** to check it.
-7. **Image understanding:** DeepSeek can't see images, so set up a [vision helper](#image-understanding-vision-helper). Gemini or Ollama cost little or nothing.
-8. **Log in to TikTok once:** on the *Status* tab press **Open browser (to log in)**. A separate Edge window opens with its own profile, kept in `data/edge-profiles/watcher`. Log in to TikTok there yourself. You stay logged in between runs.
-9. **Phone access (optional):** allow the port through Windows Firewall. Open *PowerShell as Administrator* and run:
+   The first time it installs the dependencies (about a minute). Then the app starts in the background and the dashboard opens at http://localhost:8004. You can close the terminal.
+6. **Make shortcuts** so you never need the terminal again:
+   ```powershell
+   node scripts/launch.mjs --install-shortcuts
+   ```
+   This puts **TikTok Agent** (start + open the dashboard) and **Stop TikTok Agent** on your desktop and in the Start menu. Both run `node.exe` directly. Add `--autostart` to also start the app (without opening the dashboard) when you sign in to Windows. If Windows won't let the command create shortcuts, it prints the exact text to paste into *right-click desktop → New → Shortcut*.
+7. **DeepSeek API key:** create one at https://platform.deepseek.com, add a little credit, then paste the key in *AI & Prompts → AI provider → API key* and press **Save**. Press **Test AI connection** to check it.
+8. **Image understanding:** DeepSeek can't see images, so set up a [vision helper](#image-understanding-vision-helper). Gemini or Ollama cost little or nothing.
+9. **Log in to TikTok once:** on the *Status* tab press **Log in to TikTok**. A normal Edge window opens with the agent's own profile (`data/edge-profiles/watcher`). It is a completely ordinary window with no automation. Log in there yourself (QR code with the TikTok app, phone or email). The dashboard notices when you're logged in, usually within 30 seconds or as soon as you close the window. You stay logged in between runs.
+10. **Phone access (optional):** allow the port through Windows Firewall. Open *PowerShell as Administrator* and run:
    ```powershell
    netsh advfirewall firewall add rule name="TikTok Agent 8004" dir=in action=allow protocol=TCP localport=8004
    ```
    Then open the address shown under *Settings → Open on your phone* (e.g. `http://192.168.1.23:8004`). If other people use your Wi-Fi, set a **dashboard password** in Settings.
 
-To stop everything, double-click **`stop.bat`**, or press Ctrl+C in the `npm start` window. When started with `start.bat`, the app restarts itself if it crashes. Logs are in `data/logs/app.log`.
+**Starting and stopping:**
+- Start: the **TikTok Agent** shortcut, or `node scripts/launch.mjs`. If it's already running, this just opens the dashboard.
+- Stop: the **Stop TikTok Agent** shortcut, **Settings → ⏻ Stop the app** in the dashboard (also works from your phone), or `node scripts/launch.mjs --stop`.
+- If the app crashes, it restarts by itself after 5 seconds. Logs are in `data/logs/app.log`.
+- For developers: `npm run dev` runs it in the foreground; Ctrl+C stops it.
 
 ## Windows blocked the app (Smart App Control / SmartScreen)
 
@@ -52,15 +60,16 @@ Windows 11 **Smart App Control** blocks programs and scripts that are unsigned a
    ```powershell
    Get-ChildItem -Recurse -File | Unblock-File
    ```
-   `start.bat` does this itself on every start. If `start.bat` itself is the blocked file, it can't run, so use this command once by hand.
+   `scripts/launch.mjs` does this itself on every start.
 2. **Use `git clone` instead of the ZIP** (see step 4 above). Cloned files are never marked as downloaded.
-3. **Start without .bat files:** in a terminal in the app folder, run `npm install --omit=dev` and then `npm start`. This only runs `node.exe` and `npm`, both installed and signed by the official Node.js installer. The app ships no other executables. Earlier versions included `esbuild.exe`, which Smart App Control blocked; it has been removed.
+3. **Start with node.exe only:** there are no .bat files any more. Smart App Control blocked `start.bat` ("explorer.exe loading cmd.exe didn't meet the signing level"). Use the shortcuts or `node scripts/launch.mjs`, which only run `node.exe` (signed by the OpenJS Foundation). Dependencies are installed by running npm's own JavaScript through node.exe, so `npm.cmd` is never needed. The app ships no executables of its own. Earlier versions included `esbuild.exe`, which Smart App Control also blocked; it has been removed.
 4. **If the blocked file is `node.exe`:** your Node.js probably came from a ZIP or a third-party tool (nvm, fnm, Volta, a portable build), and those copies may lack a trusted signature. Fix:
    1. Settings → Apps → Installed apps → uninstall every *Node.js* entry. If you used nvm-windows, uninstall it too.
    2. Delete leftovers if they exist: `C:\Program Files\nodejs` and `%AppData%\npm`.
    3. Download the **Windows Installer (.msi)** for the LTS version from https://nodejs.org/en/download (it is signed by the OpenJS Foundation) and install with default options.
-   4. Open a **new** terminal and check `node -v` (needs 22.18 or newer). Then in the app folder: `Remove-Item -Recurse -Force node_modules` → `npm install --omit=dev` → `npm start`.
-5. **If ffmpeg.exe is blocked** (video creation): install it with `winget install Gyan.FFmpeg`. If it's still blocked, set the path to a different build in *Settings → Video tools*.
+   4. Open a **new** terminal and check `node -v` (needs 22.18 or newer). Then in the app folder: `Remove-Item -Recurse -Force node_modules` → `node scripts/launch.mjs`. Re-create the shortcuts with `node scripts/launch.mjs --install-shortcuts`, because they point to node.exe.
+5. **Windows built-in voices** use PowerShell's speech feature, which Smart App Control's locked-down PowerShell mode can block. If they fail, use the Microsoft Edge voices instead.
+6. **If ffmpeg.exe is blocked** (video creation): install it with `winget install Gyan.FFmpeg`. If it's still blocked, set the path to a different build in *Settings → Video tools*.
 
 > ⚠️ **Don't turn Smart App Control off just to run this app.** Once you switch it off, you can't turn it back on without resetting or reinstalling Windows. The steps above avoid the need.
 
@@ -69,6 +78,13 @@ Windows 11 **Smart App Control** blocks programs and scripts that are unsigned a
 1. *Watch* tab: write your **Watch instructions** and pick sources. Default is the For You feed.
 2. *Status* tab: press **▶ Start now** (default 10 minutes). Watch the live screenshot, what the AI is thinking, the session timer and the counters.
 3. Afterwards: *Picks* → **Build picks now**. *History* shows every video, the decision and the reason.
+
+## The agent's Edge window
+
+- The agent starts **Microsoft Edge itself, as an ordinary program**, with its own profile folder (`data/edge-profiles/<name>`). It then connects to it through Edge's remote-debugging port, the same approach as dsh-douyin-agent. Playwright never launches the browser, so none of its automation switches are present.
+- **Logging in** happens in a completely normal Edge window with no debugging port at all (*Log in to TikTok* on the Status page or for each posting account). Be aware that a debugging port by itself makes Edge report `navigator.webdriver = true`. That's why login gets its own fully normal window. Watching and posting need the port, and the agent does **not** try to hide that it is being driven.
+- **Profile already open?** If the agent's profile is open in another window (opened by hand or left over), the agent stops with a clear message instead of a blank window. **Close it for me** closes only the processes using that profile folder. Your normal Edge is never touched.
+- **No window jitter:** screenshots are taken straight from Edge's compositor without changing the window size or zoom, and only while a session is running. When idle there's a manual **📷 Take a snapshot** button.
 
 ## How it watches
 
@@ -174,7 +190,7 @@ All page selectors are in *Settings → TikTok page selectors* (JSON). If someth
 ## Files
 
 ```
-start.bat / stop.bat     start and stop (scripts/run.bat keeps it running)
+scripts/launch.mjs       start / stop / create shortcuts (node.exe only); scripts/supervise.mjs keeps it running
 src/                     server (TypeScript, run directly with tsx)
   settings/              settings schema (one place defines defaults, validation and the dashboard forms), presets, prompts
   prompts/*.md           default prompts (your edits are stored in the database; "Reset" restores these)
@@ -192,7 +208,7 @@ test/                    tests (fake tiktok.com + fake AI API)
 
 ```
 npm install        # includes TypeScript for type checking
-npm start          # http://localhost:8004 — runs src/index.ts directly with Node's built-in type stripping
+npm run dev        # http://localhost:8004 in the foreground — runs src/index.ts with Node's built-in type stripping
 npm test           # unit + end-to-end (needs ffmpeg + a Chromium; set BROWSER_PATH)
 npm run typecheck
 ```

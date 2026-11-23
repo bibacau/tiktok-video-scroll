@@ -1,14 +1,14 @@
 import { EventEmitter } from 'node:events';
-import { BrowserManager } from '../browser/edge.js';
-import { TikTok } from '../browser/tiktok.js';
-import { getDb, nowIso } from '../db.js';
-import { log } from '../log.js';
-import { BudgetExceeded, logBudgetStop, spentRM } from '../llm/budget.js';
-import { getAppSettings, getDayPresets, getPreset } from '../settings/store.js';
-import { hhmmToMin, zoned, sleep } from '../time.js';
-import { runSession, SessionOver, type SessionHost } from '../watch/session.js';
-import { generatePicks } from '../watch/picks.js';
-import { savePlan, todaysPlan, watchedSecondsToday, type PlanEntry } from '../schedule/planner.js';
+import { BrowserManager } from '../browser/edge.ts';
+import { TikTok } from '../browser/tiktok.ts';
+import { getDb, nowIso } from '../db.ts';
+import { log } from '../log.ts';
+import { BudgetExceeded, logBudgetStop, spentRM } from '../llm/budget.ts';
+import { getAppSettings, getDayPresets, getPreset } from '../settings/store.ts';
+import { hhmmToMin, zoned, sleep } from '../time.ts';
+import { runSession, SessionOver, type SessionHost } from '../watch/session.ts';
+import { generatePicks } from '../watch/picks.ts';
+import { savePlan, todaysPlan, watchedSecondsToday, type PlanEntry } from '../schedule/planner.ts';
 
 export type State = 'idle' | 'starting' | 'running' | 'paused' | 'needs_user' | 'stopping';
 

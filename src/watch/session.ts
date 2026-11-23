@@ -1,19 +1,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { TikTok, type Source, type SourceKind, type VideoInfo, type Inspection } from '../browser/tiktok.js';
-import { HungError } from '../browser/edge.js';
-import { getDb, nowIso } from '../db.js';
-import { log } from '../log.js';
-import { chatJson } from '../llm/client.js';
-import { BudgetExceeded } from '../llm/budget.js';
-import { getMemory, getAppSettings } from '../settings/store.js';
-import { getPrompt, render } from '../settings/prompts.js';
-import { paths } from '../paths.js';
-import { rand, sleep, zoned } from '../time.js';
-import { storyboard, type Frame } from './storyboard/index.js';
-import { interestsForPrompt, updateInterests } from './memory.js';
+import { TikTok, type Source, type SourceKind, type VideoInfo, type Inspection } from '../browser/tiktok.ts';
+import { HungError } from '../browser/edge.ts';
+import { getDb, nowIso } from '../db.ts';
+import { log } from '../log.ts';
+import { chatJson } from '../llm/client.ts';
+import { BudgetExceeded } from '../llm/budget.ts';
+import { getMemory, getAppSettings } from '../settings/store.ts';
+import { getPrompt, render } from '../settings/prompts.ts';
+import { paths } from '../paths.ts';
+import { rand, sleep, zoned } from '../time.ts';
+import { storyboard, type Frame } from './storyboard/index.ts';
+import { interestsForPrompt, updateInterests } from './memory.ts';
 
-export class GuardHit extends Error { constructor(public kind: string, detail: string) { super(detail); } }
+export class GuardHit extends Error { kind: string; constructor(kind: string, detail: string) { super(detail); this.kind = kind; } }
 export class SessionOver extends Error {}
 
 /** What the session loop needs from the controller. */

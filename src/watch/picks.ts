@@ -1,8 +1,8 @@
-import { getDb, kvSet, kvGet, nowIso } from '../db.js';
-import { chatJson } from '../llm/client.js';
-import { getPrompt, render } from '../settings/prompts.js';
-import { getMemory } from '../settings/store.js';
-import { log } from '../log.js';
+import { getDb, kvSet, kvGet, nowIso } from '../db.ts';
+import { chatJson } from '../llm/client.ts';
+import { getPrompt, render } from '../settings/prompts.ts';
+import { getMemory } from '../settings/store.ts';
+import { log } from '../log.ts';
 
 export async function generatePicks(day: string, preset: { data: any }) {
   const save = preset.data.save;

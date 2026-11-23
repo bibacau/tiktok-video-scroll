@@ -1,5 +1,5 @@
-import { getMemory, saveMemory, type Interest } from '../settings/store.js';
-import { nowIso } from '../db.js';
+import { getMemory, saveMemory, type Interest } from '../settings/store.ts';
+import { nowIso } from '../db.ts';
 
 export interface TopicSignal { topic: string; signal: 'like' | 'dislike' | 'neutral' }
 

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getDb, nowIso } from '../db.js';
-import { paths } from '../paths.js';
+import { getDb, nowIso } from '../db.ts';
+import { paths } from '../paths.ts';
 
 /** Every prompt the app sends. Default text lives in src/prompts/<key>.md; edits are stored in the DB. */
 export const PROMPTS: Array<{ key: string; title: string; step: string; variables: string[] }> = [

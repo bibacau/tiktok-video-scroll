@@ -1,5 +1,5 @@
-import type { Day } from './settings/dsl.js';
-import { getAppSettings } from './settings/store.js';
+import type { Day } from './settings/dsl.ts';
+import { getAppSettings } from './settings/store.ts';
 
 export const tz = () => { try { const t = getAppSettings().general.timezone; new Intl.DateTimeFormat('en', { timeZone: t }); return t; } catch { return 'Asia/Kuala_Lumpur'; } };
 

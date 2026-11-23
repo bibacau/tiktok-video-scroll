@@ -1,10 +1,10 @@
 import fs from 'node:fs';
-import { ensureDirs, paths } from './paths.js';
-import { getDb, closeDb } from './db.js';
-import { log } from './log.js';
-import { listPresets, loadSecretsIntoRedactor } from './settings/store.js';
-import { buildServer } from './api/server.js';
-import { controller } from './runtime/controller.js';
+import { ensureDirs, paths } from './paths.ts';
+import { getDb, closeDb } from './db.ts';
+import { log } from './log.ts';
+import { listPresets, loadSecretsIntoRedactor } from './settings/store.ts';
+import { buildServer } from './api/server.ts';
+import { controller } from './runtime/controller.ts';
 
 const PORT = Number(process.env.PORT || 8004);
 const HOST = process.env.HOST || '0.0.0.0';

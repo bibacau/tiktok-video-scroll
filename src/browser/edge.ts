@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { chromium, type BrowserContext, type Page } from 'playwright-core';
-import { paths } from '../paths.js';
-import { getAppSettings } from '../settings/store.js';
-import { log } from '../log.js';
+import { paths } from '../paths.ts';
+import { getAppSettings } from '../settings/store.ts';
+import { log } from '../log.ts';
 
 const SCRIPTS = fs.readFileSync(path.join(paths.root, 'src', 'browser', 'page-scripts.js'), 'utf8');
 
@@ -38,7 +38,8 @@ export class BrowserManager {
   closedByUs = false;
   private crashed = false;
 
-  constructor(public profile: () => string = () => getAppSettings().browser.profileName) {}
+  profile: () => string;
+  constructor(profile: () => string = () => getAppSettings().browser.profileName) { this.profile = profile; }
 
   profileDir() { return path.join(paths.profiles, this.profile().replace(/[^\w.-]/g, '_') || 'watcher'); }
   isOpen() { return !!this.ctx && !!this.page && !this.page.isClosed(); }

@@ -3,15 +3,19 @@ setlocal
 cd /d "%~dp0"
 set PORT=8004
 
+rem Files downloaded from the internet (ZIP) carry a "Mark of the Web" that Smart App Control
+rem and SmartScreen use to block them. Remove it from every file in this folder.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -LiteralPath '%~dp0.' -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue" >nul 2>nul
+
 where node >nul 2>nul
 if errorlevel 1 (
   echo Node.js is not installed. Install Node.js 22 LTS from https://nodejs.org and run this again.
   pause
   exit /b 1
 )
-node -e "const [a,b]=process.versions.node.split('.').map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)"
+node -e "const [a,b]=process.versions.node.split('.').map(Number);process.exit(a>22||(a===22&&b>=18)?0:1)"
 if errorlevel 1 (
-  echo Node.js 22.13 or newer is required. You have:
+  echo Node.js 22.18 or newer is required. You have:
   node -v
   echo Download the current LTS from https://nodejs.org
   pause
@@ -26,10 +30,14 @@ if not errorlevel 1 (
   exit /b 0
 )
 
-if not exist node_modules (
-  echo Installing dependencies - first run only, takes a minute...
-  call npm install --no-audit --no-fund
+rem (Re)install dependencies when they changed. Bump STAMP when package.json dependencies change.
+set STAMP=node_modules\.deps-v3
+if exist node_modules\esbuild rmdir /s /q node_modules
+if not exist %STAMP% (
+  echo Installing dependencies - takes a minute...
+  call npm install --omit=dev --no-audit --no-fund
   if errorlevel 1 ( echo npm install failed. & pause & exit /b 1 )
+  echo ok> %STAMP%
 )
 
 if not exist data\logs mkdir data\logs

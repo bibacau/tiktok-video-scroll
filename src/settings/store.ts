@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { getDb, kvGet, kvSet, nowIso } from '../db.js';
-import { paths } from '../paths.js';
-import { registerSecret } from '../log.js';
-import { coerce, defaults, getPath, secretPaths, setPath, warnings, DAYS, type Day } from './dsl.js';
-import { appSchema, presetSchema } from './schema.js';
-import { listPrompts, setPrompt } from './prompts.js';
+import { getDb, kvGet, kvSet, nowIso } from '../db.ts';
+import { paths } from '../paths.ts';
+import { registerSecret } from '../log.ts';
+import { coerce, defaults, getPath, secretPaths, setPath, warnings, DAYS, type Day } from './dsl.ts';
+import { appSchema, presetSchema } from './schema.ts';
+import { listPrompts, setPrompt } from './prompts.ts';
 
 export interface Preset { id: string; name: string; data: any; created_at: string; updated_at: string }
 

@@ -1,8 +1,8 @@
-import { getAppSettings } from '../settings/store.js';
-import { kvGet, kvSet } from '../db.js';
-import { log } from '../log.js';
-import { assertBudget, recordTokens } from './budget.js';
-import { sleep } from '../time.js';
+import { getAppSettings } from '../settings/store.ts';
+import { kvGet, kvSet } from '../db.ts';
+import { log } from '../log.ts';
+import { assertBudget, recordTokens } from './budget.ts';
+import { sleep } from '../time.ts';
 
 export type Step = 'watch' | 'analyze' | 'picks' | 'plan' | 'script';
 export interface Image { mime: string; base64: string }
@@ -16,7 +16,7 @@ export interface ChatRequest {
 }
 export interface ChatResult<T = any> { json: T; text: string; model: string; usedImages: boolean; visionNote?: string }
 
-class HttpError extends Error { constructor(public status: number, public body: string) { super(`HTTP ${status}: ${body.slice(0, 300)}`); } }
+class HttpError extends Error { status: number; body: string; constructor(status: number, body: string) { super(`HTTP ${status}: ${body.slice(0, 300)}`); this.status = status; this.body = body; } }
 
 async function post(baseUrl: string, apiKey: string, body: unknown, timeoutSeconds: number, signal?: AbortSignal) {
   if (!apiKey) throw new Error('No API key set. Add it in Settings → AI provider.');

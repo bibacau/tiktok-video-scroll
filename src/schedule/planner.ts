@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { getDb } from '../db.js';
-import { getDayPresets, getPreset } from '../settings/store.js';
-import { hhmmToMin, minToHhmm, rand, zoned } from '../time.js';
+import { getDb } from '../db.ts';
+import { getDayPresets, getPreset } from '../settings/store.ts';
+import { hhmmToMin, minToHhmm, rand, zoned } from '../time.ts';
 
 export interface PlanEntry { start: string; end: string; minutes: number; status: 'pending' | 'running' | 'done' | 'missed' | 'stopped'; sessionId?: number }
 export interface DayPlan { day: string; presetId: string; presetName: string; enabled: boolean; requestedMinutes: number; plannedMinutes: number; entries: PlanEntry[]; warnings: string[] }

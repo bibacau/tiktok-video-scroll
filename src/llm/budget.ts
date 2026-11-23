@@ -1,7 +1,7 @@
-import { getDb, nowIso } from '../db.js';
-import { getAppSettings } from '../settings/store.js';
-import { zoned } from '../time.js';
-import { log } from '../log.js';
+import { getDb, nowIso } from '../db.ts';
+import { getAppSettings } from '../settings/store.ts';
+import { zoned } from '../time.ts';
+import { log } from '../log.ts';
 
 export class BudgetExceeded extends Error { code = 'BUDGET_EXCEEDED'; }
 

@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { paths } from './paths.js';
+import { paths } from './paths.ts';
 
 let db: DatabaseSync | null = null;
 

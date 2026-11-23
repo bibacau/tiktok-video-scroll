@@ -1,8 +1,8 @@
 import type { Page } from 'playwright-core';
-import { BrowserManager, runScript } from './edge.js';
-import { getAppSettings } from '../settings/store.js';
-import { DEFAULT_SELECTORS } from '../settings/schema.js';
-import { sleep } from '../time.js';
+import { BrowserManager, runScript } from './edge.ts';
+import { getAppSettings } from '../settings/store.ts';
+import { DEFAULT_SELECTORS } from '../settings/schema.ts';
+import { sleep } from '../time.ts';
 
 export type SourceKind = 'foryou' | 'search' | 'hashtag' | 'creator';
 export interface Source { kind: SourceKind; value?: string }
@@ -36,7 +36,8 @@ export function sourceUrl(src: Source) {
 
 /** All tiktok.com page driving lives here. Selectors come from settings. */
 export class TikTok {
-  constructor(public browser: BrowserManager) {}
+  browser: BrowserManager;
+  constructor(browser: BrowserManager) { this.browser = browser; }
 
   inspect(): Promise<Inspection> {
     return this.browser.guarded(page => runScript<Inspection>(page, 'inspect', selectors()), 'inspect page', 20_000);

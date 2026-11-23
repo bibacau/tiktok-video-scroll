@@ -1,4 +1,4 @@
-import { s, DAYS, type Field } from './dsl.js';
+import { s, DAYS, type Field } from './dsl.ts';
 
 const allDays = (start: string, end: string) => Object.fromEntries(DAYS.map(d => [d, [{ start, end }]]));
 
@@ -190,4 +190,3 @@ export const appSchema = s.group('App', {
   selectors: s.json('TikTok page selectors', DEFAULT_SELECTORS, { rows: 20, help: 'Advanced. If TikTok changes its website, fix selectors here without touching code.' }),
 });
 
-export type PresetData = ReturnType<typeof import('./dsl.js').defaults>;

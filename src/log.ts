@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { getDb, nowIso } from './db.js';
+import { getDb, nowIso } from './db.ts';
 
 export type Level = 'debug' | 'info' | 'warn' | 'error' | 'alert';
 export interface LogEvent { id?: number; at: string; level: Level; type: string; message: string; data?: unknown }

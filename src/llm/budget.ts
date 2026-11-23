@@ -2,15 +2,19 @@ import { getDb, nowIso } from '../db.ts';
 import { getAppSettings } from '../settings/store.ts';
 import { zoned } from '../time.ts';
 import { log } from '../log.ts';
+import { DEFAULT_PRICING } from '../settings/schema.ts';
 
 export class BudgetExceeded extends Error { code = 'BUDGET_EXCEEDED'; }
 
 interface Price { provider: string; model: string; inputCacheHit: number; inputCacheMiss: number; output: number }
 
 function priceFor(provider: string, model: string): Price {
-  const table: Price[] = Array.isArray(getAppSettings().budget.pricing) ? getAppSettings().budget.pricing : [];
-  return table.find(p => p.provider === provider && p.model === model)
-    ?? table.find(p => p.provider === provider && p.model === '*')
+  const user: Price[] = Array.isArray(getAppSettings().budget.pricing) ? getAppSettings().budget.pricing : [];
+  const exact = (t: Price[]) => t.find(p => p.provider === provider && p.model === model);
+  const hit = exact(user) ?? exact(DEFAULT_PRICING as Price[]);
+  if (hit) return hit;
+  const table = [...user, ...(DEFAULT_PRICING as Price[])];
+  return table.find(p => p.provider === provider && p.model === '*')
     ?? table.find(p => p.model === 'deepseek-chat')
     ?? { provider, model, inputCacheHit: 0, inputCacheMiss: 0, output: 0 };
 }

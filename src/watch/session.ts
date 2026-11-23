@@ -142,7 +142,7 @@ async function handleVideo(host: SessionHost, v: VideoInfo, source: Source, c: C
   const watch = host.preset.data.watch, save = host.preset.data.save, b = watch.behaviour;
   const started = Date.now();
   c.videos++;
-  const current = { key: v.key, url: v.url, author: v.author, desc: v.desc.slice(0, 300), duration: v.duration, phase: 'glancing' };
+  const current: Record<string, any> = { key: v.key, url: v.url, author: v.author, desc: v.desc.slice(0, 300), duration: v.duration, phase: 'glancing' };
   host.update({ current, counts: { ...c } });
 
   const reason = prefilter(v, watch);
@@ -179,10 +179,13 @@ async function handleVideo(host: SessionHost, v: VideoInfo, source: Source, c: C
     languages: watch.filters.languages.join(', ') || 'any', video: videoText(v, source),
     frames_note: sb ? `Frames: ${sb.note}` : 'No frames could be captured.',
   };
-  const decision = (await chatJson({
+  const decided = await chatJson({
     step: 'watch', signal, system: render(getPrompt('watch_decide'), decideVars),
     images: sb ? [{ mime: 'image/jpeg', base64: sb.jpeg.toString('base64') }] : [],
-  })).json ?? {};
+  });
+  const decision = decided.json ?? {};
+  const frameInfo = { mode: decided.mode, visionModel: decided.visionModel, description: decided.visionNote, frames: frames.length };
+  current.frames = frameInfo;
   const interest = Math.max(0, Math.min(100, Number(decision.interest) || 0));
   const threshold = b.strictness * 10;
   let action: 'watch' | 'skip' = decision.action === 'watch' && interest >= threshold - 10 ? 'watch' : 'skip';
@@ -192,7 +195,7 @@ async function handleVideo(host: SessionHost, v: VideoInfo, source: Source, c: C
   if (action === 'skip') {
     c.skipped++;
     updateInterests(decision.topics, (Date.now() - started) / 1000 / Math.max(1, v.duration ?? 30), 'skip');
-    record(host, v, source, { decision: 'skip', interest, reason: decision.reason, watched: (Date.now() - started) / 1000, data: { decide: decision } });
+    record(host, v, source, { decision: 'skip', interest, reason: decision.reason, watched: (Date.now() - started) / 1000, data: { decide: decision, frames: frameInfo } });
     host.update({ counts: { ...c } });
     await delay();
     return;
@@ -213,20 +216,22 @@ async function handleVideo(host: SessionHost, v: VideoInfo, source: Source, c: C
   if (b.analyzeWatched) {
     host.update({ thinking: 'Second look: what is worth saving?', current: { ...current, phase: 'analyzing' } });
     const sb2 = frames.length ? storyboard(frames) : null;
-    analysis = (await chatJson({
+    const analyzed = await chatJson({
       step: 'analyze', signal,
       system: render(getPrompt('watch_analyze'), {
         persona: mem.persona, instructions: watch.instructions, fields: save.fields.join(', '), video: videoText(v, source),
         first_decision: `${decision.reason ?? ''} (interest ${interest})`, frames_note: sb2 ? `Frames: ${sb2.note}` : 'No frames captured.',
       }),
       images: sb2 ? [{ mime: 'image/jpeg', base64: sb2.jpeg.toString('base64') }] : [],
-    })).json ?? {};
+    });
+    analysis = analyzed.json ?? {};
+    Object.assign(frameInfo, { mode: analyzed.mode, visionModel: analyzed.visionModel ?? frameInfo.visionModel, description: analyzed.visionNote ?? frameInfo.description, frames: frames.length });
   }
   const score = analysis ? Math.max(0, Math.min(100, Number(analysis.score) || 0)) : interest;
   const doSave = score >= save.saveThreshold && (analysis ? analysis.save !== false : true);
   if (doSave) c.saved++;
   updateInterests(analysis?.topics ?? decision.topics, ratio, 'watch');
-  const rowId = record(host, v, source, { decision: 'watch', interest, score, reason: analysis?.reason ?? decision.reason, watched, saved: doSave, data: { decide: decision, analysis } });
+  const rowId = record(host, v, source, { decision: 'watch', interest, score, reason: analysis?.reason ?? decision.reason, watched, saved: doSave, data: { decide: decision, analysis, frames: frameInfo } });
   if (doSave && frames.length) {
     try { fs.writeFileSync(path.join(paths.media, `video-${rowId}.jpg`), storyboard(frames).jpeg); } catch { /* not critical */ }
   }

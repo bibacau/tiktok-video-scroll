@@ -60,6 +60,7 @@ test('watch session: filters, AI decisions, image fallback, saving, memory, pick
   assert.ok(saved.length >= 1, 'saved at least one recipe');
   const fields = JSON.parse(saved[0].data).fields;
   assert.equal(fields.hook, 'Shows the finished dish in the first second');
+  assert.equal(JSON.parse(saved[0].data).frames.mode, 'text', 'frame mode recorded (no vision helper → text only)');
   assert.ok(fields.link?.includes('/video/'), 'link saved');
   assert.ok(fs.existsSync(path.join(tmp, 'media', `video-${saved[0].id}.jpg`)), 'storyboard thumbnail saved');
   assert.equal(llm.stats.imageRejects, 1, 'images tried once, then text-only');

@@ -14,7 +14,7 @@ export type Field =
   | (Base & { type: 'number' | 'slider'; default: number; min: number; max: number; step?: number; unit?: string; warn?: { above?: number; below?: number; message: string } })
   | (Base & { type: 'bool'; default: boolean; warnWhenOn?: string })
   | (Base & { type: 'locked'; default: true; note: string })
-  | (Base & { type: 'select'; default: string; options: Option[]; allowCustom?: boolean })
+  | (Base & { type: 'select'; default: string; options: Option[]; allowCustom?: boolean; fills?: Record<string, Record<string, unknown>> })
   | (Base & { type: 'checkboxes'; default: string[]; options: Option[] })
   | (Base & { type: 'list'; default: string[]; placeholder?: string; maxItems?: number })
   | (Base & { type: 'weights'; default: Record<string, number>; options: Option[] })

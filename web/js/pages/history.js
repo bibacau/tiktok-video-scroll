@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { html, get, fmtDur, fmtTime, toast } from '../api.js';
+import { html, get, fmtDur, fmtTime, toast, frameBadge } from '../api.js';
 
 function Videos({ session }) {
   const [rows, setRows] = useState(null);
@@ -12,6 +12,7 @@ function Videos({ session }) {
     <strong>@${v.author || '?'}</strong>
     ${v.interest != null ? html`<span class="muted small">interest ${v.interest}${v.score != null ? ` · score ${v.score}` : ''}</span>` : null}
     <span class="muted small">${Math.round(v.watched_seconds)}s</span>
+    ${frameBadge(v.data?.frames)}
     ${v.url ? html`<a class="small" href=${v.url} target="_blank" rel="noopener">↗</a>` : null}
     <div class="why">${v.reason}</div>
     ${v.caption ? html`<div class="muted small clamp">${v.caption}</div>` : null}

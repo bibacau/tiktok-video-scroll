@@ -52,6 +52,21 @@ function Memory() {
   </section>`;
 }
 
+function VisionTest() {
+  const [res, setRes] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const run = guard(async () => { setBusy(true); setRes(null); try { setRes(await post('/api/test-vision')); } finally { setBusy(false); } });
+  return html`<section class="card"><h3>Test vision helper</h3>
+    <p class="help">Sends one sample frame to the vision model you saved below and shows what it sees. Save your vision settings first.</p>
+    <button class="btn" disabled=${busy} onClick=${run}>${busy ? 'Asking the vision model…' : '👁 Test vision'}</button>
+    ${res ? html`<div class="visiontest">
+      <img src=${res.image} alt="sample frame" />
+      <div><p><b>${res.model}</b> · ${res.ms} ms · ${res.source}</p><p>${res.description}</p>
+      ${!res.enabled ? html`<p class="warn">Works — now switch on “Describe video frames with a vision model first” and Save, or the watcher won't use it.</p>` : null}</div>
+    </div>` : null}
+  </section>`;
+}
+
 function Tools() {
   const [models, setModels] = useState(null);
   const test = guard(async () => { const r = await post('/api/test-llm'); toast(`AI OK (${r.model}): ${JSON.stringify(r.reply)}`); });
@@ -68,6 +83,7 @@ export function AiPage() {
   return html`<div>
     <${Tools} />
     <${AppSettingsForm} only=${['llm', 'vision', 'steps']} />
+    <${VisionTest} />
     <${Prompts} />
     <${Memory} />
   </div>`;

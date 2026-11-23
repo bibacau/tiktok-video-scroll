@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { html, get, post, guard, fmtDur, fmtTime, rm, toast } from '../api.js';
+import { html, get, post, guard, fmtDur, fmtTime, rm, toast, frameBadge } from '../api.js';
 import { useLive, useShared } from '../store.js';
 
 export function StatusPage() {
@@ -68,6 +68,9 @@ export function StatusPage() {
           <div><span class=${`pill small ${s.current.phase}`}>${s.current.phase}</span> <strong>@${s.current.author || '?'}</strong>
           ${s.current.duration ? html` <span class="muted">${Math.round(s.current.duration)}s</span>` : null}</div>
           <p class="desc">${s.current.desc || html`<span class="muted">(no caption)</span>`}</p>
+          ${s.current.frames ? html`<div class="framemode">Frames: ${frameBadge(s.current.frames)}
+            ${s.current.frames.mode === 'text' ? html`<a href="#ai" class="small"> set up a vision helper</a>` : null}
+            ${s.current.frames.description ? html`<details><summary class="small">What the vision model saw</summary><p class="small">${s.current.frames.description}</p></details>` : null}</div>` : null}
           ${s.current.url ? html`<a href=${s.current.url} target="_blank" rel="noopener">Open on TikTok ↗</a>` : null}
         </div>` : html`<p class="muted">—</p>`}
         <div class="thinking">🧠 ${s.thinking || '…'}</div>

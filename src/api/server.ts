@@ -13,6 +13,7 @@ import * as store from '../settings/store.ts';
 import { listPrompts, resetPrompt, setPrompt } from '../settings/prompts.ts';
 import { budgetSummary } from '../llm/budget.ts';
 import { chatJson, listModels, resetImageCapability } from '../llm/client.ts';
+import { testVision } from '../llm/vision-test.ts';
 import { generatePicks, getPicks } from '../watch/picks.ts';
 import { regeneratePlan, todaysPlan } from '../schedule/planner.ts';
 import { today } from '../time.ts';
@@ -86,6 +87,7 @@ export async function buildServer(): Promise<FastifyInstance> {
     const r = await chatJson({ step: 'watch', system: 'Reply with JSON {"ok": true, "hello": "<one friendly word in Malay>"}' });
     return { ok: true, model: r.model, reply: r.json };
   });
+  app.post('/api/test-vision', async () => testVision());
   app.post('/api/reset-image-capability', async () => { resetImageCapability(); return { ok: true }; });
 
   // ----------------------------------------------------------- control

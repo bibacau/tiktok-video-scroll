@@ -36,3 +36,12 @@ export const guard = fn => async (...a) => { try { return await fn(...a); } catc
 export const fmtDur = s => { s = Math.max(0, Math.round(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return h ? `${h}h ${m}m` : m ? `${m}m ${String(x).padStart(2, '0')}s` : `${x}s`; };
 export const fmtTime = iso => iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 export const rm = n => `RM${(Number(n) || 0).toFixed(2)}`;
+
+export const FRAME_MODES = {
+  images: ['🖼', 'images sent to the AI'], vision: ['👁', 'vision helper'], text: ['📝', 'text only (no image understanding)'], none: ['—', 'no frames'],
+};
+export function frameBadge(f) {
+  if (!f?.mode) return null;
+  const [icon, label] = FRAME_MODES[f.mode] ?? ['?', f.mode];
+  return html`<span class=${`pill small fm-${f.mode}`} title=${f.description || ''}>${icon} ${label}${f.mode === 'vision' && f.visionModel ? ` (${f.visionModel})` : ''}</span>`;
+}

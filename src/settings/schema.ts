@@ -116,11 +116,29 @@ export const DEFAULT_SELECTORS = {
   loginTexts: ['Log in to TikTok', 'Log in to follow', 'Log masuk ke TikTok'],
 };
 
+export const VISION_PROVIDERS = [
+  { value: 'gemini', label: 'Google Gemini (cheap, has a free tier)', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash-lite' },
+  { value: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1-mini' },
+  { value: 'openrouter', label: 'OpenRouter (many models, one key)', baseUrl: 'https://openrouter.ai/api/v1', model: 'google/gemini-2.5-flash-lite' },
+  { value: 'ollama', label: 'Ollama on this PC (free, no key)', baseUrl: 'http://localhost:11434/v1', model: 'gemma3:4b' },
+  { value: 'custom', label: 'Custom (any OpenAI-compatible endpoint)', baseUrl: '', model: '' },
+];
+
 // Prices are editable because they change. Values are USD per 1M tokens.
 // Verify against https://api-docs.deepseek.com/quick_start/pricing — update here if they differ.
 export const DEFAULT_PRICING = [
   { provider: 'deepseek', model: 'deepseek-chat', inputCacheHit: 0.028, inputCacheMiss: 0.28, output: 0.42 },
   { provider: 'deepseek', model: 'deepseek-reasoner', inputCacheHit: 0.028, inputCacheMiss: 0.28, output: 0.42 },
+  // Vision helper presets (USD per 1M tokens; images are billed as input tokens by these providers).
+  { provider: 'vision', model: 'gpt-4.1-mini', inputCacheHit: 0.1, inputCacheMiss: 0.4, output: 1.6 },
+  { provider: 'vision', model: 'gpt-4.1-nano', inputCacheHit: 0.025, inputCacheMiss: 0.1, output: 0.4 },
+  { provider: 'vision', model: 'gpt-4o-mini', inputCacheHit: 0.075, inputCacheMiss: 0.15, output: 0.6 },
+  { provider: 'vision', model: 'gemini-2.5-flash-lite', inputCacheHit: 0.025, inputCacheMiss: 0.1, output: 0.4 },
+  { provider: 'vision', model: 'gemini-2.5-flash', inputCacheHit: 0.075, inputCacheMiss: 0.3, output: 2.5 },
+  { provider: 'vision', model: 'google/gemini-2.5-flash-lite', inputCacheHit: 0.025, inputCacheMiss: 0.1, output: 0.4 },
+  { provider: 'vision', model: 'openai/gpt-4.1-mini', inputCacheHit: 0.1, inputCacheMiss: 0.4, output: 1.6 },
+  { provider: 'vision', model: 'gemma3:4b', inputCacheHit: 0, inputCacheMiss: 0, output: 0 },
+  { provider: 'vision', model: 'qwen2.5vl:7b', inputCacheHit: 0, inputCacheMiss: 0, output: 0 },
   { provider: 'vision', model: '*', inputCacheHit: 0, inputCacheMiss: 0, output: 0 },
 ];
 
@@ -162,13 +180,17 @@ export const appSchema = s.group('App', {
     timeoutSeconds: s.number('Request timeout', 90, 10, 600, { unit: 's' }),
     retries: s.number('Retries on network error', 2, 0, 5),
   }),
-  vision: s.group('Vision helper (optional)', {
-    enabled: s.bool('Describe frames with a separate vision model first', false, { help: 'Use this if your main model cannot see images. Any OpenAI-compatible vision endpoint.' }),
-    baseUrl: s.text('API base URL', ''),
-    apiKey: s.secret('API key'),
-    model: s.text('Model', ''),
-    prompt: s.textarea('Vision prompt', 'Describe what happens in these numbered video frames: people, food, objects, on-screen text (transcribe it), setting, format (talking head, tutorial, montage…). Be factual and concise.'),
-  }, { collapsed: true }),
+  vision: s.group('Vision helper (image understanding)', {
+    enabled: s.bool('Describe video frames with a vision model first', false, { help: 'DeepSeek cannot see images. Turn this on so a vision model describes the frames, then DeepSeek decides from that text.' }),
+    provider: s.select('Provider', 'gemini', VISION_PROVIDERS.map(p => ({ value: p.value, label: p.label })), {
+      fills: Object.fromEntries(VISION_PROVIDERS.filter(p => p.baseUrl).map(p => [p.value, { baseUrl: p.baseUrl, model: p.model }])),
+      help: 'Choosing a provider fills in the address and a suggested model. Change the model if you like.' }),
+    baseUrl: s.text('API base URL', 'https://generativelanguage.googleapis.com/v1beta/openai'),
+    apiKey: s.secret('API key', { help: 'Not needed for Ollama.' }),
+    model: s.text('Model', 'gemini-2.5-flash-lite'),
+    maxTokens: s.number('Max description length (tokens)', 600, 100, 4000),
+    detail: s.select('Image detail', 'auto', ['auto', 'low', 'high'], { help: 'low = cheaper and faster (OpenAI/OpenRouter).' }),
+  }),
   steps: s.group('Models per step', {
     watch: step('Watch decision', 'deepseek-chat', 0.3),
     analyze: step('Second look / save', 'deepseek-chat', 0.3),

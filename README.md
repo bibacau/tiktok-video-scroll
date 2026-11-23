@@ -80,7 +80,43 @@ For each video:
 4. **If watching:** it stays longer (more interest means longer, up to your max), samples more frames, and optionally takes a **second AI look**. That extracts topic, hook, format, sound and reason, plus a score. Videos scoring above your threshold are saved with the fields you ticked.
 5. **Interests** are updated from what was actually watched.
 
-**About images:** the app first tries sending the storyboard images. If your model refuses images (DeepSeek's chat API may be text-only), it notices once and switches to text-only decisions for that model, using caption, creator, hashtags, sound and stats. For real frame understanding, turn on *AI & Prompts → Vision helper*, which accepts any OpenAI-compatible vision endpoint. Model IDs aren't hard-coded: press **Load models** to see what your key offers, and type any model ID.
+**About images:** if the [vision helper](#image-understanding-vision-helper) is on, it describes the frames first. Otherwise the app tries sending the images to the main model. If the model refuses them (DeepSeek does), it notices once and switches to text only for that model. Each decision shows which way it went: 🖼 images, 👁 vision helper, or 📝 text only (Status and History pages). Model IDs aren't hard-coded: press **Load models** to see what your key offers, and type any model ID.
+
+## Image understanding (vision helper)
+
+**DeepSeek's API is text-only**, so it can't see the video frames. Without help it decides from the caption, creator, hashtags, sound and stats only, and the Status page shows **📝 text only**. To let the agent see what's in the video, add a **vision helper**. It looks at the frames, writes a short description (including on-screen text), and DeepSeek decides from that. The Status page then shows **👁 vision helper**.
+
+Setup is the same for every provider: *AI & Prompts → Vision helper (image understanding)* → choose **Provider** (this fills in the address and a suggested model) → paste the key → switch on **Describe video frames with a vision model first** → **Save** → press **👁 Test vision**. You should see a sample image and the model's description of it.
+
+| Provider | Key from | Suggested model | Rough cost* |
+|---|---|---|---|
+| **Google Gemini** | https://aistudio.google.com/apikey → *Create API key* | `gemini-2.5-flash-lite` | lowest; Google has a free tier with rate limits |
+| **OpenAI** | https://platform.openai.com/api-keys (add billing credit first) | `gpt-4.1-mini` (cheaper: `gpt-4.1-nano`) | low |
+| **OpenRouter** | https://openrouter.ai/keys (add credit) — one key for many models | `google/gemini-2.5-flash-lite` | same as the underlying model |
+| **Ollama** (on your PC) | no key | `gemma3:4b` (better at reading text: `qwen2.5vl:7b`) | free, uses your PC |
+
+\*Default prices are in *Budget → Price table*, so their cost is counted. I couldn't check them against the providers' websites from where I built this, and providers change prices and model names. Check them, and if you choose a newer model, type its name and add a row to the price table.
+
+### Ollama step by step (free, runs on your PC)
+
+1. Download and install Ollama for Windows from https://ollama.com/download. It runs in the background after install (llama icon in the tray).
+2. Open a terminal and download a vision model (about 3–6 GB, one time):
+   ```powershell
+   ollama pull gemma3:4b
+   ```
+   For better reading of on-screen text, if your PC has 8 GB+ of graphics memory or 16 GB+ RAM: `ollama pull qwen2.5vl:7b`
+3. Check it works: `ollama run gemma3:4b "hello"`. It should answer. Type `/bye` to exit.
+4. In the dashboard choose **Provider: Ollama on this PC**. The address `http://localhost:11434/v1` and model are filled in. Leave the key empty, switch the helper on, **Save**, then **Test vision**.
+5. On a PC without a strong graphics card each description can take 10–60 seconds, which makes watching slower. Raise *Glance before deciding* if needed, or use Gemini.
+
+### Gemini step by step
+1. Go to https://aistudio.google.com/apikey and sign in with a Google account → **Create API key** → copy it.
+2. In the dashboard choose **Provider: Google Gemini**, paste the key, switch the helper on, **Save**, **Test vision**.
+
+### OpenAI / OpenRouter
+Same as Gemini. Create the key on their site (links in the table), add a little credit, choose the provider, paste, **Save**, **Test vision**.
+
+The prompt the vision model gets is editable under *AI & Prompts → Prompts → Vision helper: describe frames*.
 
 ## Safety rules (built in, not settings)
 

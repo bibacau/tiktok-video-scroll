@@ -3,6 +3,7 @@ import { kvGet, kvSet } from '../db.ts';
 import { log } from '../log.ts';
 import { assertBudget, recordTokens } from './budget.ts';
 import { sleep } from '../time.ts';
+import { getPrompt } from '../settings/prompts.ts';
 
 export type Step = 'watch' | 'analyze' | 'picks' | 'plan' | 'script';
 export interface Image { mime: string; base64: string }
@@ -14,12 +15,16 @@ export interface ChatRequest {
   images?: Image[];
   signal?: AbortSignal;
 }
-export interface ChatResult<T = any> { json: T; text: string; model: string; usedImages: boolean; visionNote?: string }
+/** How the frames reached the decision: sent as images, described by the vision helper, or not at all. */
+export type FrameMode = 'images' | 'vision' | 'text' | 'none';
+export interface ChatResult<T = any> { json: T; text: string; model: string; usedImages: boolean; visionNote?: string; mode: FrameMode; visionModel?: string }
 
 class HttpError extends Error { status: number; body: string; constructor(status: number, body: string) { super(`HTTP ${status}: ${body.slice(0, 300)}`); this.status = status; this.body = body; } }
 
 async function post(baseUrl: string, apiKey: string, body: unknown, timeoutSeconds: number, signal?: AbortSignal) {
-  if (!apiKey) throw new Error('No API key set. Add it in Settings → AI provider.');
+  const local = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(baseUrl);
+  if (!apiKey && !local) throw new Error(`No API key set for ${new URL(baseUrl).host}. Add it in the dashboard.`);
+  if (!apiKey) apiKey = 'local';
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(new Error('AI request timed out')), timeoutSeconds * 1000);
   const onAbort = () => ctrl.abort(signal!.reason);
@@ -65,16 +70,17 @@ const looksLikeNoImageSupport = (e: unknown) => e instanceof HttpError && e.stat
   && /image|vision|multimodal|content.*type|unknown variant|image_url|deserializ/i.test(e.body);
 
 /** Optional separate vision model: turns frames into a text description. */
-async function describeFrames(images: Image[], signal?: AbortSignal): Promise<string | null> {
-  const s = getAppSettings();
-  if (!s.vision.enabled || !s.vision.baseUrl || !s.vision.model) return null;
+export async function describeFrames(images: Image[], signal?: AbortSignal, force = false): Promise<{ text: string; model: string } | null> {
+  const s = getAppSettings(), v = s.vision;
+  if ((!v.enabled && !force) || !v.baseUrl || !v.model) return null;
   assertBudget();
-  const data = await withRetries(() => post(s.vision.baseUrl, s.vision.apiKey, {
-    model: s.vision.model, temperature: 0.2, max_tokens: 800,
-    messages: [{ role: 'user', content: [{ type: 'text', text: s.vision.prompt }, ...images.map(i => ({ type: 'image_url', image_url: { url: `data:${i.mime};base64,${i.base64}` } }))] }],
+  const data = await withRetries(() => post(v.baseUrl, v.apiKey, {
+    model: v.model, temperature: 0.2, max_tokens: v.maxTokens,
+    messages: [{ role: 'user', content: [{ type: 'text', text: getPrompt('vision_describe') }, ...images.map(i => ({ type: 'image_url', image_url: { url: `data:${i.mime};base64,${i.base64}`, detail: v.detail } }))] }],
   }, s.llm.timeoutSeconds, signal), s.llm.retries, signal);
-  recordTokens('vision', s.vision.model, 'vision', data.usage);
-  return String(data.choices?.[0]?.message?.content ?? '').trim() || null;
+  recordTokens('vision', v.model, 'vision', data.usage);
+  const text = String(data.choices?.[0]?.message?.content ?? '').trim();
+  return text ? { text, model: v.model } : null;
 }
 
 /** Chat call that must return JSON. Handles model choice per step, reasoning, images, budget and retries. */
@@ -83,12 +89,16 @@ export async function chatJson<T = any>(req: ChatRequest): Promise<ChatResult<T>
   const stepCfg = s.steps[req.step];
   const model: string = stepCfg.reasoning ? s.llm.reasoningModel : stepCfg.model;
   const noImages = kvGet<Record<string, boolean>>('modelsWithoutImages', {});
-  let visionNote: string | undefined;
+  let visionNote: string | undefined, visionModel: string | undefined;
   let images = req.images ?? [];
+  const hadImages = images.length > 0;
 
   if (images.length) {
-    const described = await describeFrames(images, req.signal).catch(e => { log('warn', 'vision', `Vision helper failed: ${e.message}`); return null; });
-    if (described) { visionNote = described; images = []; }
+    const described = await describeFrames(images, req.signal).catch(e => {
+      if (e instanceof Error && (e as any).code === 'BUDGET_EXCEEDED') throw e;
+      log('warn', 'vision', `Vision helper failed: ${e.message}`); return null;
+    });
+    if (described) { visionNote = described.text; visionModel = described.model; images = []; }
   }
   const wantImages = images.length > 0 && (s.llm.imageMode === 'on' || (s.llm.imageMode === 'auto' && !noImages[model]));
 
@@ -110,14 +120,14 @@ export async function chatJson<T = any>(req: ChatRequest): Promise<ChatResult<T>
   };
 
   if (wantImages) {
-    try { return { ...(await call(true)), model, usedImages: true, visionNote }; } catch (e) {
+    try { return { ...(await call(true)), model, usedImages: true, visionNote, mode: 'images' }; } catch (e) {
       if (s.llm.imageMode === 'auto' && looksLikeNoImageSupport(e)) {
         kvSet('modelsWithoutImages', { ...noImages, [model]: true });
         log('warn', 'llm', `Model ${model} does not accept images — switching to text-only decisions for it. Enable the vision helper in Settings for frame understanding.`);
       } else throw e;
     }
   }
-  return { ...(await call(false)), model, usedImages: false, visionNote };
+  return { ...(await call(false)), model, usedImages: false, visionNote, visionModel, mode: visionNote ? 'vision' : hadImages ? 'text' : 'none' };
 }
 
 export async function listModels(): Promise<string[]> {

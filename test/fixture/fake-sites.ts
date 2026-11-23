@@ -76,15 +76,25 @@ export function startFakeTikTok(port = 0, opts: { captchaAfter?: number } = {}):
   }));
 }
 
-export interface MockStats { calls: number; imageRejects: number; byKind: Record<string, number> }
+export interface MockStats { calls: number; imageRejects: number; byKind: Record<string, number>; visionCalls: number; lastUserText: string; lastVisionAuth: string }
 
 /** Fake OpenAI-compatible API. Rejects images like a text-only model would. */
 export function startMockLlm(port = 0): Promise<{ url: string; stats: MockStats; close: () => void }> {
-  const stats: MockStats = { calls: 0, imageRejects: 0, byKind: {} };
+  const stats: MockStats = { calls: 0, imageRejects: 0, byKind: {}, visionCalls: 0, lastUserText: '', lastVisionAuth: '' };
   const server = http.createServer(async (req, res) => {
     let body = ''; for await (const c of req) body += c;
     if (req.url?.endsWith('/models')) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ data: [{ id: 'deepseek-chat' }, { id: 'deepseek-reasoner' }] })); return; }
     const j = JSON.parse(body || '{}');
+    if (j.model === 'mock-vision') {
+      // A vision model (like Gemini/OpenAI/Ollama): accepts images, returns a description.
+      stats.visionCalls++; stats.lastVisionAuth = String(req.headers.authorization ?? '');
+      const parts = j.messages?.[0]?.content ?? [];
+      const n = Array.isArray(parts) ? parts.filter((p: any) => p.type === 'image_url' && String(p.image_url?.url).startsWith('data:image/jpeg;base64,')).length : 0;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message: { content: `I see ${n} image(s): a plate of nasi lemak with sambal; on-screen text "RESEPI MUDAH".` } }], usage: { prompt_tokens: 900, completion_tokens: 40 } }));
+      return;
+    }
+    if (j.model === 'missing-vision') { res.writeHead(404, { 'content-type': 'application/json' }); res.end('{"error":{"message":"model not found"}}'); return; }
     if (req.headers.authorization !== 'Bearer sk-test-123456789') { res.writeHead(401); res.end('{"error":"bad key"}'); return; }
     const user = j.messages?.[1]?.content;
     if (Array.isArray(user) && user.some((p: any) => p.type === 'image_url')) {
@@ -94,6 +104,7 @@ export function startMockLlm(port = 0): Promise<{ url: string; stats: MockStats;
       return;
     }
     stats.calls++;
+    stats.lastUserText = typeof user === 'string' ? user : JSON.stringify(user);
     const sys: string = j.messages?.[0]?.content ?? '';
     let out: any;
     if (sys.includes('Decide if this video')) {

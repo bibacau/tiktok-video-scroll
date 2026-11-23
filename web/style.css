@@ -134,3 +134,8 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { text
 .login { max-width: 360px; margin: 80px auto; display: grid; gap: 10px; }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translate(-50%, 40px); opacity: 0; background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px; z-index: 50; transition: .25s; max-width: 90vw; font-size: 14px; }
 .toast.show { transform: translate(-50%, 0); opacity: 1; } .toast.err { background: var(--err); color: #fff; } .toast.warn { background: var(--warn); color: #fff; }
+.framemode { margin: 6px 0; font-size: 14px; }
+.pill.fm-vision, .pill.fm-images { background: #2563eb22; color: #2563eb; text-transform: none; }
+.pill.fm-text { background: var(--warnbg); color: var(--warn); text-transform: none; }
+.visiontest { display: flex; gap: 12px; margin-top: 10px; align-items: flex-start; }
+.visiontest img { width: 120px; border-radius: 8px; border: 1px solid var(--line); flex: none; }

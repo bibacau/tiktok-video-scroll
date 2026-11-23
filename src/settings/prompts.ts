@@ -9,6 +9,7 @@ export const PROMPTS: Array<{ key: string; title: string; step: string; variable
     variables: ['persona', 'interests', 'instructions', 'strictness', 'languages', 'video', 'frames_note'] },
   { key: 'watch_analyze', title: 'Watch: second look & what to save', step: 'analyze',
     variables: ['persona', 'instructions', 'fields', 'video', 'first_decision', 'frames_note'] },
+  { key: 'vision_describe', title: 'Vision helper: describe frames', step: 'vision', variables: [] },
   { key: 'picks', title: "Today's picks", step: 'picks',
     variables: ['persona', 'criteria', 'count', 'candidates', 'instructions'] },
 ];

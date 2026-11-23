@@ -12,7 +12,7 @@ export function Group({ field, value, onChange, nested = false, siblings }) {
     if (f.showIf && value?.[f.showIf.field] !== f.showIf.equals) return null;
     return f.type === 'group'
       ? html`<${Group} key=${k} field=${f} value=${value?.[k]} onChange=${v => set(k, v)} nested=${true} />`
-      : html`<${FieldRow} key=${k} field=${f} value=${value?.[k]} onChange=${v => set(k, v)} />`;
+      : html`<${FieldRow} key=${k} field=${f} value=${value?.[k]} onChange=${v => f.fills?.[v] ? onChange({ ...value, [k]: v, ...f.fills[v] }) : set(k, v)} />`;
   });
   return html`<section class=${nested ? 'subgroup' : 'card'}>
     <header class="group-head" onClick=${() => setOpen(!open)}>

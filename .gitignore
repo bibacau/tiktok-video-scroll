@@ -4,3 +4,6 @@ data/
 .env
 secrets.json
 test/fixture/*.webm
+test/fixture/*.mp4
+test/fixture/*.mp3
+test/fixture/*.png

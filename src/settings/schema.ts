@@ -85,11 +85,90 @@ export const engagementSchema = s.group('Engagement', {
   }),
 }, { phase: 3, help: 'All off by default. Engagement only happens on videos the AI chose to watch.' });
 
+export const EDGE_VOICES = [
+  { value: 'ms-MY-YasminNeural', label: 'Malay — Yasmin (female)' }, { value: 'ms-MY-OsmanNeural', label: 'Malay — Osman (male)' },
+  { value: 'en-SG-LunaNeural', label: 'English (Singapore) — Luna' }, { value: 'en-SG-WayneNeural', label: 'English (Singapore) — Wayne' },
+  { value: 'en-US-AriaNeural', label: 'English (US) — Aria' }, { value: 'en-US-GuyNeural', label: 'English (US) — Guy' },
+  { value: 'en-US-JennyNeural', label: 'English (US) — Jenny' }, { value: 'en-GB-SoniaNeural', label: 'English (UK) — Sonia' },
+  { value: 'id-ID-GadisNeural', label: 'Indonesian — Gadis' }, { value: 'id-ID-ArdiNeural', label: 'Indonesian — Ardi' },
+  { value: 'zh-CN-XiaoxiaoNeural', label: 'Chinese (Mandarin) — Xiaoxiao' }, { value: 'zh-CN-YunxiNeural', label: 'Chinese (Mandarin) — Yunxi' },
+  { value: 'ta-MY-KaniNeural', label: 'Tamil (Malaysia) — Kani' }, { value: 'ta-MY-SuryaNeural', label: 'Tamil (Malaysia) — Surya' },
+];
+
+export const createSchema = s.group('Video creation', {
+  instructions: s.textarea('Video instructions', 'Make a 45s Malay video about the most interesting food trend today, fun tone, end with a question.', { rows: 5, help: 'Plain language. Used to plan and write every video.' }),
+  basics: s.group('Basics', {
+    autoCreate: s.bool('Create videos automatically after today\'s picks are ready', false),
+    videosPerDay: s.number('Videos per day', 1, 1, 20),
+    lengthSeconds: s.number('Target length', 45, 10, 180, { unit: 's' }),
+    aspect: s.select('Aspect ratio', '9:16', [{ value: '9:16', label: '9:16 vertical (TikTok)' }, { value: '1:1', label: '1:1 square' }, { value: '4:5', label: '4:5 portrait' }, { value: '16:9', label: '16:9 landscape' }]),
+    resolution: s.select('Resolution', '1080', [{ value: '1080', label: '1080p (best)' }, { value: '720', label: '720p (faster to render)' }]),
+    language: s.text('Language', 'Malay', { help: 'Language of the script, subtitles and caption.' }),
+    tone: s.text('Tone', 'fun, energetic, friendly'),
+    audience: s.text('Target audience', 'Malaysians aged 18–35 who love food'),
+    useResearch: s.bool("Base ideas on today's picks and research", true),
+  }),
+  script: s.group('Script', {
+    hookStyle: s.select('Hook style', 'surprising fact', ['question', 'surprising fact', 'bold claim', 'POV', 'countdown', 'before/after', 'myth vs fact'], { allowCustom: true }),
+    structure: s.textarea('Structure template', 'Hook (1 scene) → 3 quick points (1 scene each) → twist or tip → call to action', { rows: 3 }),
+    sceneSeconds: s.number('Typical scene length', 5, 2, 15, { unit: 's' }),
+    cta: s.text('Call to action', 'Ask viewers a question in the comments'),
+    bannedWords: s.list('Banned words', [], { help: 'Never used in script or caption. A script that contains one is rewritten once, then the words are removed.' }),
+    bannedTopics: s.list('Banned topics', ['politics', 'religion', 'medical claims']),
+  }),
+  voice: s.group('Voice', {
+    provider: s.select('Voice provider', 'edge', [
+      { value: 'edge', label: 'Microsoft Edge voices (free, online)' }, { value: 'windows', label: 'Windows built-in voices (offline)' }, { value: 'none', label: 'No voice — text only' }]),
+    voice: s.select('Voice', 'ms-MY-YasminNeural', EDGE_VOICES, { allowCustom: true, help: 'Stock voices only. For Windows voices type the name (e.g. Microsoft Zira Desktop).' }),
+    rate: s.slider('Speed', 5, -50, 100, { unit: '%' }),
+    pitch: s.slider('Pitch', 0, -50, 50, { unit: 'Hz' }),
+    volume: s.slider('Volume', 0, -50, 50, { unit: '%' }),
+  }),
+  visuals: s.group('Visuals', {
+    source: s.select('Visual source', 'slides', [
+      { value: 'slides', label: 'Animated text slides (free, offline)' }, { value: 'stock', label: 'Stock footage (Pexels / Pixabay)' },
+      { value: 'ai_image', label: 'AI images' }, { value: 'ai_video', label: 'AI video' }, { value: 'mixed', label: 'Mix: stock footage + AI images' }],
+      { help: 'Any scene whose visual fails falls back to a text slide. Set up keys in Settings → Media providers.' }),
+    stockProvider: s.select('Stock provider', 'pexels', ['pexels', 'pixabay']),
+    imageStyle: s.textarea('AI image style', 'bright, appetising food photography, vertical composition, natural light', { rows: 2 }),
+    bgColor1: s.color('Background colour 1', '#fe2c55'), bgColor2: s.color('Background colour 2', '#25f4ee'),
+    textColor: s.color('Text colour', '#ffffff'), accentColor: s.color('Accent / box colour', '#000000'),
+    font: s.file('Font', 'fonts', { help: 'Empty = automatic (Arial Bold on Windows). Upload .ttf/.otf files to add more.' }),
+    headlineSize: s.number('Headline text size', 72, 24, 200, { unit: 'px @1080p' }),
+    transition: s.select('Transition between scenes', 'fade', ['none', 'fade']),
+    logo: s.file('Logo / watermark', 'logos', { help: 'PNG with transparency works best.' }),
+    logoPosition: s.select('Logo position', 'top-right', ['top-left', 'top-right', 'bottom-left', 'bottom-right']),
+    logoSize: s.slider('Logo width', 18, 5, 50, { unit: '% of width' }),
+    logoOpacity: s.slider('Logo opacity', 0.85, 0.1, 1, { step: 0.05 }),
+  }),
+  subtitles: s.group('Subtitles', {
+    enabled: s.bool('Burn in subtitles', true),
+    style: s.select('Style', 'box', [{ value: 'box', label: 'Text on a box' }, { value: 'outline', label: 'Outlined text' }]),
+    position: s.select('Position', 'lower', [{ value: 'top', label: 'Top' }, { value: 'middle', label: 'Middle' }, { value: 'lower', label: 'Lower third' }, { value: 'bottom', label: 'Bottom' }]),
+    size: s.number('Text size', 58, 20, 160, { unit: 'px @1080p' }),
+    wordsPerLine: s.number('Words per subtitle', 4, 1, 12),
+    uppercase: s.bool('UPPERCASE', false),
+  }),
+  music: s.group('Background music', {
+    enabled: s.bool('Add background music', false),
+    file: s.file('Track', 'music', { help: 'Empty = random track from your music folder. Upload your own music (mp3/m4a/wav) — only use music you have the rights to.' }),
+    volume: s.slider('Music volume', 0.15, 0, 1, { step: 0.05 }),
+    duck: s.bool('Lower music while the voice speaks', true),
+  }),
+  caption: s.group('Caption & hashtags', {
+    instructions: s.textarea('Caption rules', 'One or two short sentences with an emoji, ending with a question.', { rows: 2 }),
+    maxChars: s.number('Caption max length', 150, 20, 2200),
+    hashtagCount: s.number('Number of hashtags', 5, 0, 30),
+    alwaysTags: s.list('Always include hashtags (without #)', ['fyp', 'malaysia']),
+  }),
+});
+
 export const presetSchema = s.group('Preset', {
   watch: watchSchema,
   schedule: scheduleSchema,
   save: saveSchema,
   engagement: engagementSchema,
+  create: createSchema,
 });
 
 // ================================ APP =========================================
@@ -203,6 +282,28 @@ export const appSchema = s.group('App', {
     monthlyCapRM: s.number('Monthly spending cap (0 = none)', 60, 0, 1000000, { unit: 'RM', step: 1 }),
     pricing: s.json('Price table (USD per 1M tokens)', DEFAULT_PRICING, { help: 'Edit if prices change. Unknown models are counted at the deepseek-chat price.' }),
   }),
+  tools: s.group('Video tools', {
+    ffmpegPath: s.text('ffmpeg path', 'ffmpeg', { help: 'Leave as "ffmpeg" if it is installed with winget. Otherwise the full path to ffmpeg.exe.' }),
+    ffprobePath: s.text('ffprobe path', 'ffprobe'),
+    preset: s.select('Encoder speed', 'veryfast', ['ultrafast', 'veryfast', 'faster', 'medium'], { help: 'Faster = quicker render, slightly bigger file.' }),
+    edgeTtsUrl: s.text('Edge voices service address', 'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1', { help: 'Advanced. Only change if the free Edge voices stop working.' }),
+    edgeTtsVersion: s.text('Edge voices client version', '1-130.0.2849.68', { help: 'Advanced. Update to a newer Edge version number if the voices return errors.' }),
+  }, { collapsed: true }),
+  media: s.group('Media providers (video creation)', {
+    pexelsKey: s.secret('Pexels API key', { help: 'Free: https://www.pexels.com/api/' }),
+    pixabayKey: s.secret('Pixabay API key', { help: 'Free: https://pixabay.com/api/docs/' }),
+    imageProvider: s.select('AI image provider', 'openai', [{ value: 'openai', label: 'OpenAI-compatible images API' }, { value: 'replicate', label: 'Replicate' }]),
+    imageBaseUrl: s.text('Images API base URL', 'https://api.openai.com/v1'),
+    imageKey: s.secret('Images API key'),
+    imageModel: s.text('Image model', 'gpt-image-1-mini', { help: 'e.g. gpt-image-1-mini, gpt-image-1, dall-e-3 — or a Replicate model like black-forest-labs/flux-schnell' }),
+    imageSize: s.text('Image size', '1024x1536'),
+    imageQuality: s.select('Image quality', 'low', ['low', 'medium', 'high', 'auto']),
+    imagePriceUsd: s.number('Price per image (USD)', 0.011, 0, 5, { step: 0.001, help: 'Counted in the budget. Check your provider\'s current price.' }),
+    replicateToken: s.secret('Replicate API token', { help: 'https://replicate.com/account/api-tokens — used for Replicate images and AI video.' }),
+    videoModel: s.text('AI video model (Replicate)', '', { placeholder: 'e.g. wan-video/wan-2.2-t2v-fast', help: 'Leave empty to disable AI video. Scenes fall back to AI images or slides.' }),
+    videoInput: s.json('AI video input template', { prompt: '{{prompt}}' }, { rows: 4, help: '{{prompt}}, {{seconds}} and {{aspect}} are filled in. Check the model page for its input fields.' }),
+    videoPriceUsd: s.number('Price per AI video clip (USD)', 0.1, 0, 20, { step: 0.01 }),
+  }, { collapsed: true }),
   notifications: s.group('Notifications', {
     telegramBotToken: s.secret('Telegram bot token'),
     telegramChatId: s.text('Telegram chat ID', ''),

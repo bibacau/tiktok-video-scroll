@@ -1,6 +1,6 @@
 // Renders any settings schema (from /api/schema) as a form. No per-setting UI code needed.
-import { useState } from 'preact/hooks';
-import { html } from './api.js';
+import { useEffect, useState } from 'preact/hooks';
+import { html, get, del, getToken, toast } from './api.js';
 
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const DAY_LABEL = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
@@ -80,6 +80,7 @@ function Control({ field: f, value, onChange }) {
     }
     case 'windows': return html`<${Windows} value=${value || {}} onChange=${onChange} />`;
     case 'json': return html`<${JsonInput} value=${value} rows=${f.rows} onChange=${onChange} />`;
+    case 'file': return html`<${FilePicker} kind=${f.kind} value=${value || ''} onChange=${onChange} />`;
     default: return html`<span class="muted">unsupported field</span>`;
   }
 }
@@ -139,6 +140,46 @@ export function SettingsForm({ schema, value, onSave, only, saving }) {
       <span>Unsaved changes</span>
       <button class="btn ghost" onClick=${() => { setDraft(value); setDirty(false); }}>Discard</button>
       <button class="btn primary" disabled=${saving} onClick=${async () => { if (await onSave(draft) !== false) setDirty(false); }}>Save</button>
+    </div>
+  </div>`;
+}
+
+const KIND_LABEL = { fonts: 'Automatic', logos: 'No logo', music: 'Random track from my music folder' };
+const ACCEPT = { fonts: '.ttf,.otf', logos: 'image/png,image/jpeg,image/webp', music: 'audio/*,.mp3,.m4a,.wav,.ogg,.flac' };
+/** Choose an uploaded file (or system font), upload new ones, delete own uploads. */
+function FilePicker({ kind, value, onChange }) {
+  const [files, setFiles] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const load = () => get(`/api/files/${kind}`).then(setFiles).catch(e => toast(e.message, 'err'));
+  useEffect(load, [kind]);
+  const upload = async e => {
+    const list = [...(e.target.files || [])]; if (!list.length) return;
+    setBusy(true);
+    try {
+      const fd = new FormData(); list.forEach(f => fd.append('file', f, f.name));
+      const res = await fetch(`/api/files/${kind}`, { method: 'POST', body: fd, headers: { 'x-dashboard-token': getToken() } });
+      const r = await res.json(); if (!res.ok) throw new Error(r.error || 'Upload failed');
+      toast(`Uploaded ${r.saved.length} file(s)`); await load();
+      if (r.saved[0] && kind !== 'music') onChange(r.saved[0]);
+    } catch (x) { toast(x.message, 'err'); } finally { setBusy(false); e.target.value = ''; }
+  };
+  const remove = async () => {
+    if (!value || value.startsWith('system:') || !confirm(`Delete ${value}?`)) return;
+    try { await del(`/api/files/${kind}/${encodeURIComponent(value)}`); onChange(''); load(); } catch (x) { toast(x.message, 'err'); }
+  };
+  const own = files.filter(f => f.own);
+  return html`<div class="filepick">
+    <div class="row">
+      <select value=${value} onChange=${e => onChange(e.target.value)}>
+        <option value="">${KIND_LABEL[kind]}</option>
+        ${files.map(f => html`<option value=${f.value}>${f.label}</option>`)}
+      </select>
+      ${value && !value.startsWith('system:') ? html`<button class="btn small ghost" onClick=${remove}>Delete</button>` : null}
+    </div>
+    <div class="row wrap">
+      <label class="btn small">${busy ? 'Uploading…' : '⬆ Upload'}<input type="file" hidden multiple=${kind === 'music'} accept=${ACCEPT[kind]} onChange=${upload} /></label>
+      ${kind === 'music' ? html`<span class="muted small">${own.length} track(s) in your music folder</span>` : null}
+      ${kind === 'logos' && value ? html`<img class="logoprev" src=${`/uploads/logos/${encodeURIComponent(value)}`} alt="" />` : null}
     </div>
   </div>`;
 }

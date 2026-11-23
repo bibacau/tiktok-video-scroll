@@ -8,6 +8,7 @@ import { getAppSettings, getDayPresets, getPreset } from '../settings/store.ts';
 import { hhmmToMin, zoned, sleep } from '../time.ts';
 import { runSession, SessionOver, type SessionHost } from '../watch/session.ts';
 import { generatePicks } from '../watch/picks.ts';
+import { creator } from '../create/pipeline.ts';
 import { savePlan, todaysPlan, watchedSecondsToday, type PlanEntry } from '../schedule/planner.ts';
 
 export type State = 'idle' | 'starting' | 'running' | 'paused' | 'needs_user' | 'stopping';
@@ -120,7 +121,10 @@ class Controller extends EventEmitter {
     if (!preset.data.save.autoPicks) return;
     const plan = todaysPlan();
     const more = plan.enabled && plan.entries.some(e => e.status === 'pending');
-    if (!more) await generatePicks(zoned().day, preset);
+    if (!more) {
+      await generatePicks(zoned().day, preset);
+      creator.autoCreate(preset);
+    }
   }
 
   pause() {

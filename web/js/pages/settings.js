@@ -49,6 +49,6 @@ export function SettingsPage() {
         <label class="btn">Import JSON<input type="file" accept="application/json,.json" hidden onChange=${importFile} /></label>
       </div>
     </section>
-    <${AppSettingsForm} only=${['general', 'llm', 'browser', 'notifications', 'selectors']} />
+    <${AppSettingsForm} only=${['general', 'llm', 'media', 'tools', 'browser', 'notifications', 'selectors']} />
   </div>`;
 }

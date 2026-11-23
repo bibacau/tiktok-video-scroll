@@ -9,6 +9,7 @@ import { AiPage } from './pages/ai.js';
 import { BudgetPage } from './pages/budget.js';
 import { HistoryPage } from './pages/history.js';
 import { SettingsPage } from './pages/settings.js';
+import { CreatePage } from './pages/create.js';
 
 const TABS = [
   ['status', '▶ Status'], ['picks', "⭐ Picks"], ['watch', '👀 Watch'], ['schedule', '🕒 Schedule'], ['save', '💾 Save'],
@@ -72,7 +73,7 @@ function page(tab) {
     case 'schedule': return html`<${PresetSection} section="schedule" />`;
     case 'save': return html`<${PresetSection} section="save" />`;
     case 'engage': return html`<${PresetSection} section="engagement" />`;
-    case 'create': return html`<${Placeholder} phase="2" title="Video creation" text="Video instructions, script, voice, visuals, subtitles and music settings arrive in phase 2." />`;
+    case 'create': return html`<${CreatePage} />`;
     case 'post': return html`<${Placeholder} phase="3" title="Posting" text="Approval queue, scheduling, accounts (QR login) and the locked AI-generated label arrive in phase 3." />`;
     case 'presets': return html`<${PresetsPage} />`;
     case 'ai': return html`<${AiPage} />`;

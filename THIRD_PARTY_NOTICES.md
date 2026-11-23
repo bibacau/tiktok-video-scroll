@@ -45,5 +45,10 @@ https://github.com/sonpiaz/watch-cli — idea of scene-change key frames + trans
 No code copied.
 
 ## npm dependencies
-fastify, @fastify/static, @fastify/websocket, playwright-core (Apache-2.0), jpeg-js (BSD-3-Clause / Apache-2.0),
-preact, htm, tsx — see each package's license in `node_modules`.
+fastify, @fastify/static, @fastify/websocket, @fastify/multipart, ws, playwright-core (Apache-2.0), jpeg-js (BSD-3-Clause / Apache-2.0),
+preact, htm — see each package's license in `node_modules`.
+
+## Microsoft Edge "Read aloud" voices
+`src/create/tts.ts` speaks the same websocket protocol as the Edge browser's Read Aloud feature (as documented by the
+open-source edge-tts project, https://github.com/rany2/edge-tts, GPL-3.0 — protocol only, no code copied). Voices are
+Microsoft's; use them according to Microsoft's terms.

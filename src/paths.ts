@@ -22,7 +22,7 @@ export const paths = {
 };
 
 export function ensureDirs() {
-  for (const dir of [paths.data, paths.profiles, paths.media, paths.music, paths.renders, paths.uploads, paths.logs]) {
+  for (const dir of [paths.data, paths.profiles, paths.media, paths.music, paths.renders, paths.uploads, paths.logs, `${paths.uploads}/logos`, `${paths.uploads}/fonts`]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 }

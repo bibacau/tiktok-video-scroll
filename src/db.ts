@@ -34,6 +34,11 @@ CREATE INDEX IF NOT EXISTS usage_day ON usage(day);
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, level TEXT NOT NULL, type TEXT NOT NULL,
   message TEXT NOT NULL, data TEXT);
+CREATE TABLE IF NOT EXISTS creations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, preset_id TEXT, status TEXT NOT NULL, stage TEXT,
+  title TEXT, idea TEXT, script TEXT, assets TEXT, caption TEXT, hashtags TEXT, video_path TEXT, thumb_path TEXT,
+  duration REAL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS creations_day ON creations(day);
 CREATE TABLE IF NOT EXISTS day_plans (day TEXT PRIMARY KEY, preset_id TEXT, signature TEXT, plan TEXT NOT NULL);
 `;
 
@@ -42,6 +47,8 @@ export function getDb(): DatabaseSync {
     db = new DatabaseSync(paths.db);
     db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     db.exec(SCHEMA);
+    // migrations (ignore "duplicate column")
+    for (const sql of ['ALTER TABLE usage ADD COLUMN ref TEXT']) { try { db.exec(sql); } catch { /* already there */ } }
   }
   return db;
 }

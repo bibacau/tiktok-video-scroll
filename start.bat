@@ -31,7 +31,7 @@ if not errorlevel 1 (
 )
 
 rem (Re)install dependencies when they changed. Bump STAMP when package.json dependencies change.
-set STAMP=node_modules\.deps-v3
+set STAMP=node_modules\.deps-v4
 if exist node_modules\esbuild rmdir /s /q node_modules
 if not exist %STAMP% (
   echo Installing dependencies - takes a minute...
@@ -41,6 +41,8 @@ if not exist %STAMP% (
 )
 
 if not exist data\logs mkdir data\logs
+where ffmpeg >nul 2>nul
+if errorlevel 1 echo Note: ffmpeg not found - watching works, but video creation needs it: winget install Gyan.FFmpeg
 echo Starting TikTok Research Agent on port %PORT%...
 start "TikTok Research Agent (close with stop.bat)" /min cmd /c scripts\run.bat
 

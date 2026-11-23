@@ -1,4 +1,8 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { getDb, nowIso } from '../db.ts';
+
+/** Costs recorded inside usageContext.run({ ref }, fn) are tagged with ref (e.g. "creation:12"). */
+export const usageContext = new AsyncLocalStorage<{ ref: string }>();
 import { getAppSettings } from '../settings/store.ts';
 import { zoned } from '../time.ts';
 import { log } from '../log.ts';
@@ -34,8 +38,8 @@ export function recordTokens(provider: string, model: string, step: string, u: T
 /** Record any spend in USD (TTS, images, stock APIs...). */
 export function recordCost(provider: string, model: string | null, step: string, usd: number, t: { prompt?: number; cached?: number; completion?: number; units?: number } = {}) {
   const rate = getAppSettings().general.currencyRate, z = zoned();
-  getDb().prepare(`INSERT INTO usage (at, day, month, provider, model, step, prompt_tokens, cached_tokens, completion_tokens, units, cost_usd, cost_rm)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(nowIso(), z.day, z.month, provider, model, step, t.prompt ?? 0, t.cached ?? 0, t.completion ?? 0, t.units ?? 0, usd, usd * rate);
+  getDb().prepare(`INSERT INTO usage (at, day, month, provider, model, step, prompt_tokens, cached_tokens, completion_tokens, units, cost_usd, cost_rm, ref)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(nowIso(), z.day, z.month, provider, model, step, t.prompt ?? 0, t.cached ?? 0, t.completion ?? 0, t.units ?? 0, usd, usd * rate, usageContext.getStore()?.ref ?? null);
   return usd * rate;
 }
 
@@ -63,6 +67,10 @@ export function budgetSummary() {
     byDay: db.prepare('SELECT day, ROUND(SUM(cost_rm), 4) rm, SUM(prompt_tokens + completion_tokens) tokens, COUNT(*) calls FROM usage GROUP BY day ORDER BY day DESC LIMIT 31').all(),
     byStep: db.prepare('SELECT provider, model, step, ROUND(SUM(cost_rm), 4) rm, SUM(prompt_tokens) prompt, SUM(completion_tokens) completion, COUNT(*) calls FROM usage WHERE month = ? GROUP BY provider, model, step ORDER BY rm DESC').all(z.month),
   };
+}
+
+export function costForRef(ref: string): number {
+  return (getDb().prepare('SELECT COALESCE(SUM(cost_rm), 0) rm FROM usage WHERE ref = ?').get(ref) as any).rm;
 }
 
 export function logBudgetStop(e: BudgetExceeded) { log('alert', 'budget', `${e.message}. Runs stopped until the cap allows more.`); }

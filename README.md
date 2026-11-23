@@ -11,7 +11,7 @@ Everything is a setting: what to watch, when and for how long, what to save, the
 | Phase | What | State |
 |---|---|---|
 | 1 | Settings system, dashboard, watcher, picks, schedule, budget tracking | ✅ done |
-| 2 | Video creator (script, voice, visuals, subtitles, music) — local only, no upload | next |
+| 2 | Video creator (plan, script, voice, visuals, subtitles, music, logo) — local only, no upload | ✅ done |
 | 3 | Posting (approval queue, scheduling, QR accounts, **AI-generated label always on**), analytics, engagement | |
 | 4 | Notifications (Telegram/email), polish | |
 
@@ -118,13 +118,49 @@ Same as Gemini. Create the key on their site (links in the table), add a little 
 
 The prompt the vision model gets is editable under *AI & Prompts → Prompts → Vision helper: describe frames*.
 
+## Video creation (phase 2)
+
+*Create* tab → **Studio**: type a topic (or leave it empty so the AI picks from today's research) → **🎬 Create**. Each video goes through **plan → script → voice → visuals → render**, and you can watch the progress live. Nothing is posted. Finished videos wait in the Studio for you to preview, download, and copy the caption and hashtags.
+
+On each video you can:
+- **↻ Script**: write a new script (also redoes voice and visuals)
+- **↻ Voice**: record the voice again, e.g. after changing voice, speed or pitch. Visuals are kept.
+- **↻ Visuals**: get new stock footage or AI images. The voice is kept.
+- **↻ Re-render**: apply changed subtitle, logo, music, colour or font settings without any AI cost
+- **✎ Edit script**: change any line, headline, scene order, caption or hashtags yourself, then *Save & re-render*. Only changed lines get a new voice.
+
+Everything is set per preset under *Create → Creation settings*: video instructions, videos per day (and auto-create after today's picks), length, aspect ratio (default 9:16), language, tone, audience, hook style, structure, call to action, banned words and topics, voice, visuals, colours, font, logo, subtitles, music, and caption and hashtag rules. The prompts are on *AI & Prompts → Prompts* (*Create: plan…*, *Create: write the script*, *Create: AI image prompt*). Every cost (AI, images, AI video) goes into the budget and is shown on each video.
+
+### What you need to install or set up for video creation
+
+1. **ffmpeg** (required). Open a terminal and run:
+   ```powershell
+   winget install Gyan.FFmpeg
+   ```
+   Close and reopen the terminal (and restart the app), then check `ffmpeg -version`. If you put ffmpeg somewhere else, set the full path in *Settings → Video tools*.
+2. **Voice:**
+   - *Microsoft Edge voices* are free and need no key. They include Malay (Yasmin, Osman), English, Chinese, Tamil and Indonesian. They use the same free online service as Edge's "Read aloud". It isn't an official API, so if it ever stops working, update *Settings → Video tools → Edge voices client version* to your current Edge version, or switch to *Windows built-in voices*, which work offline but sound more robotic and have no Malay.
+   - *No voice — text only* makes silent videos with on-screen text. Add music if you like.
+3. **Visuals** (pick one in *Creation settings → Visuals*):
+   - *Animated text slides*: free and offline. Uses your colours and font.
+   - *Stock footage*: get a free key from https://www.pexels.com/api/ or https://pixabay.com/api/docs/ and paste it in *Settings → Media providers*. Credits are listed on each video.
+   - *AI images*: an OpenAI key (https://platform.openai.com/api-keys) with model `gpt-image-1-mini`, or any OpenAI-compatible images API, or Replicate (e.g. `black-forest-labs/flux-schnell`). Set the price per image so the budget is right.
+   - *AI video*: a Replicate token and a text-to-video model name. Look up the model's input fields on its Replicate page and adjust *AI video input template*. If it fails, the scene uses an AI image or a slide instead. Video models are slow and cost more per clip.
+4. **Your music:** upload tracks in *Creation settings → Background music → Upload*. They go into `data/music`. Only use music you have the rights to. TikTok may mute copyrighted music.
+5. **Logo / font (optional):** upload a PNG logo and a .ttf/.otf font in *Creation settings → Visuals*. With no font chosen, Arial Bold is used.
+
+**Tested here with fakes:** the whole pipeline is tested with real ffmpeg rendering, but against fake AI, voice, Pexels and image servers. The real Edge voice service, Pexels/Pixabay, OpenAI images and Replicate couldn't be reached from where this was built, so check each once with a short video.
+
 ## Safety rules (built in, not settings)
 
 - **Captcha / login / verification on screen → the agent pauses and alerts you** (dashboard banner, sound and vibration on phones). It never tries to solve or get around them. Fix it yourself in the Edge window and press **Resume**.
 - **Watchdog:** if Edge crashes or stops responding, it is restarted and the session continues. There's a limit on restarts per session, which you can set in Settings → Browser.
 - The browser profile is used only by this app. Your normal Edge is never touched.
 - Engagement (likes/follows/favourites/comments) is **off by default**, and comments always need your approval (phase 3).
-- Phases 2 and 3: videos are made only from your own text, TTS, licensed stock and AI media. Other people's videos are never downloaded or re-uploaded. Every upload gets TikTok's **AI-generated label**, and it can't be turned off.
+- **Original videos only:** videos are made only from your text, stock voices, licensed stock footage (Pexels/Pixabay), AI images or video, and your own music and logo. Video downloads are only allowed from Pexels, Pixabay and Replicate, and TikTok's servers are always refused, so other people's videos can't be downloaded or re-uploaded.
+- **No cloned faces or voices:** only stock TTS voices (no voice cloning). Every AI image or video prompt gets a fixed rule: no real, famous or identifiable people, no logos, no text.
+- Banned words are checked in code: a script that contains one is rewritten once, then the words are removed.
+- Phase 3: every upload gets TikTok's **AI-generated label**, and it can't be turned off.
 - Setting more than 4 hours a day shows a warning about ban risk, but it's allowed.
 
 ## Budget
@@ -144,6 +180,7 @@ src/                     server (TypeScript, run directly with tsx)
   prompts/*.md           default prompts (your edits are stored in the database; "Reset" restores these)
   browser/               Edge launch + watchdog, tiktok.com page driving, captcha/login detection
   watch/                 watch session loop, storyboard, interest memory, picks
+  create/                video creator: plan/script, voices (Edge/Windows), visuals (slides/stock/AI), ffmpeg render, job pipeline
   schedule/              daily planner (sessions, breaks, jitter, windows)
   llm/                   OpenAI-compatible client, budget ledger
 web/                     dashboard (Preact, no build step)

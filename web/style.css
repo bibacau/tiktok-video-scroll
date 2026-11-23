@@ -139,3 +139,17 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { text
 .pill.fm-text { background: var(--warnbg); color: var(--warn); text-transform: none; }
 .visiontest { display: flex; gap: 12px; margin-top: 10px; align-items: flex-start; }
 .visiontest img { width: 120px; border-radius: 8px; border: 1px solid var(--line); flex: none; }
+.filepick { display: grid; gap: 6px; } .logoprev { height: 36px; border-radius: 4px; background: repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 0 0/12px 12px; }
+.ccards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.ccard { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
+.cmedia video { width: 100%; max-height: 520px; background: #000; display: block; }
+.cplaceholder { height: 160px; display: grid; place-items: center; font-size: 42px; background: var(--chip); }
+.cbody { padding: 10px 12px; } .cbody p { margin: 4px 0; }
+.steps { display: flex; gap: 4px; flex-wrap: wrap; margin: 6px 0; } .steps span { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+.steps span.done { background: #16a34a22; color: var(--ok); } .steps span.now { background: var(--accent); color: #fff; }
+.captionbox { background: var(--chip); border-radius: 8px; padding: 8px 10px; margin: 6px 0; font-size: 14px; }
+.actions { margin-top: 8px; } .actions .btn { text-decoration: none; }
+.pill.ready { background: #16a34a22; color: var(--ok); } .pill.failed { background: var(--errbg); color: var(--err); }
+.pill.queued, .pill.planning, .pill.scripting, .pill.voicing, .pill.visuals, .pill.rendering { background: #b4530922; color: var(--warn); }
+.scripted { display: grid; gap: 6px; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+.scene { border: 1px dashed var(--line); border-radius: 8px; padding: 8px; display: grid; gap: 4px; }

@@ -4,6 +4,11 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
+import fastifyMultipart from '@fastify/multipart';
+import { creator, getCreation, listCreations, type Step } from '../create/pipeline.ts';
+import { listFiles, saveUpload, deleteUpload, isKind } from '../files.ts';
+import { listWindowsVoices } from '../create/tts.ts';
+import { EDGE_VOICES } from '../settings/schema.ts';
 import { paths } from '../paths.ts';
 import { getDb } from '../db.ts';
 import { bus, log, type LogEvent } from '../log.ts';
@@ -23,14 +28,17 @@ const tokenFor = (pw: string) => createHash('sha256').update(`dash:${pw}`).diges
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, bodyLimit: 20 * 1024 * 1024 });
   await app.register(fastifyWebsocket);
+  await app.register(fastifyMultipart, { limits: { fileSize: 200 * 1024 * 1024, files: 20 } });
   await app.register(fastifyStatic, { root: paths.web, prefix: '/' });
   await app.register(fastifyStatic, { root: path.join(paths.root, 'node_modules'), prefix: '/vendor/', decorateReply: false, allowedPath: p => /^\/(preact|htm)\//.test(p) });
   await app.register(fastifyStatic, { root: paths.media, prefix: '/media/', decorateReply: false });
+  await app.register(fastifyStatic, { root: paths.renders, prefix: '/renders/', decorateReply: false });
+  await app.register(fastifyStatic, { root: path.join(paths.uploads, 'logos'), prefix: '/uploads/logos/', decorateReply: false });
 
   // Optional dashboard password (set in Settings). Localhost is always allowed.
   app.addHook('onRequest', async (req, reply) => {
     const pw = store.getAppSettings().general.dashboardPassword;
-    if (!pw || !(req.url.startsWith('/api/') || req.url.startsWith('/ws') || req.url.startsWith('/media/'))) return;
+    if (!pw || !['/api/', '/ws', '/media/', '/renders/', '/uploads/'].some(p => req.url.startsWith(p))) return;
     if (req.url.startsWith('/api/login')) return;
     const ip = req.ip;
     if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return;
@@ -148,6 +156,42 @@ export async function buildServer(): Promise<FastifyInstance> {
     return { ok: true };
   });
 
+  // ----------------------------------------------------------- video creation
+  app.get('/api/creations', async () => ({ creations: listCreations(100), queue: creator.state() }));
+  app.get('/api/creations/:id', async (req, reply) => getCreation(Number((req.params as any).id)) ?? reply.code(404).send({ error: 'Not found' }));
+  app.post('/api/creations', async req => {
+    const b = (req.body ?? {}) as any;
+    return creator.createVideos({ presetId: b.presetId || undefined, count: Number(b.count) || 1, topic: typeof b.topic === 'string' && b.topic.trim() ? b.topic.trim() : undefined });
+  });
+  app.post('/api/creations/:id/regenerate', async req => {
+    const step = String((req.body as any)?.step) as Step;
+    if (!['script', 'voice', 'visuals', 'render'].includes(step)) throw Object.assign(new Error('step must be script, voice, visuals or render'), { statusCode: 400 });
+    return creator.rebuild(Number((req.params as any).id), step);
+  });
+  app.put('/api/creations/:id/script', async req => creator.saveScript(Number((req.params as any).id), req.body as any));
+  app.delete('/api/creations/:id', async req => { creator.delete(Number((req.params as any).id)); return { ok: true }; });
+  app.get('/api/voices', async () => ({ edge: EDGE_VOICES, windows: await listWindowsVoices().catch(() => []) }));
+
+  // ----------------------------------------------------------- uploads (fonts, logos, music)
+  app.get('/api/files/:kind', async req => {
+    const kind = (req.params as any).kind;
+    if (!isKind(kind)) throw Object.assign(new Error('Unknown kind'), { statusCode: 404 });
+    return listFiles(kind);
+  });
+  app.post('/api/files/:kind', async req => {
+    const kind = (req.params as any).kind;
+    if (!isKind(kind)) throw Object.assign(new Error('Unknown kind'), { statusCode: 404 });
+    const saved: string[] = [];
+    for await (const part of req.files()) saved.push(saveUpload(kind, part.filename, await part.toBuffer()));
+    log('info', 'files', `Uploaded ${saved.length} ${kind} file(s)`);
+    return { saved };
+  });
+  app.delete('/api/files/:kind/:name', async req => {
+    const { kind, name } = req.params as any;
+    if (!isKind(kind)) throw Object.assign(new Error('Unknown kind'), { statusCode: 404 });
+    deleteUpload(kind, name); return { ok: true };
+  });
+
   // ----------------------------------------------------------- live updates
   app.get('/ws', { websocket: true }, socket => {
     controller.viewers++;
@@ -155,10 +199,17 @@ export async function buildServer(): Promise<FastifyInstance> {
     const onStatus = (s: unknown) => send('status', s);
     const onShot = (s: unknown) => send('screenshot', s);
     const onLog = (e: LogEvent) => { if (e.level !== 'debug') send('log', e); };
+    const onCreation = (c: unknown) => send('creation', c);
+    const onQueue = (q: unknown) => send('creatorQueue', q);
+    const onDeleted = (id: unknown) => send('creationDeleted', id);
     controller.on('status', onStatus); controller.on('screenshot', onShot); bus.on('log', onLog);
+    creator.on('update', onCreation); creator.on('queue', onQueue); creator.on('deleted', onDeleted);
     send('status', controller.snapshot());
     if (controller.lastScreenshot) send('screenshot', controller.lastScreenshot);
-    socket.on('close', () => { controller.viewers--; controller.off('status', onStatus); controller.off('screenshot', onShot); bus.off('log', onLog); });
+    socket.on('close', () => {
+      controller.viewers--; controller.off('status', onStatus); controller.off('screenshot', onShot); bus.off('log', onLog);
+      creator.off('update', onCreation); creator.off('queue', onQueue); creator.off('deleted', onDeleted);
+    });
   });
 
   return app;

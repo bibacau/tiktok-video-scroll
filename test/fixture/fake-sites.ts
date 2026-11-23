@@ -114,6 +114,22 @@ export function startMockLlm(port = 0): Promise<{ url: string; stats: MockStats;
     } else if (sys.includes('Analyse it')) {
       stats.byKind.analyze = (stats.byKind.analyze ?? 0) + 1;
       out = { save: true, score: 88, topic: 'Malaysian recipe', hook: 'Shows the finished dish in the first second', format: 'recipe tutorial', reason: 'Strong hook, easy to remake', audio: 'original sound', summary: 'A quick recipe.', topics: [{ topic: 'malaysian recipes', signal: 'like' }] };
+    } else if (sys.includes('You are planning ORIGINAL')) {
+      stats.byKind.plan = (stats.byKind.plan ?? 0) + 1;
+      out = { ideas: [{ title: 'Nasi lemak in 3 steps', angle: 'Fast home version', why: 'Trending', inspired_by: [] }, { title: 'Roti canai myths', angle: 'Myth vs fact', why: 'Fun', inspired_by: [] }] };
+    } else if (sys.includes('Write the script for an ORIGINAL')) {
+      stats.byKind.script = (stats.byKind.script ?? 0) + 1;
+      const retry = typeof user === 'string' && user.includes('banned words');
+      out = {
+        title: 'Nasi lemak 3 langkah', hook: 'Tahukah anda?',
+        scenes: [
+          { voiceover: retry ? 'Tahukah anda nasi lemak boleh siap dalam sepuluh minit?' : 'Nasi lemak paling sedap siap dalam sepuluh minit!', on_screen: 'Nasi lemak 10 minit', keywords: 'nasi lemak plate', image_prompt: 'a plate of nasi lemak' },
+          { voiceover: 'Masak nasi dengan santan dan daun pandan.', on_screen: 'Langkah 1', keywords: 'coconut rice cooking', image_prompt: 'coconut rice in a pot' },
+          { voiceover: 'Goreng ikan bilis dan kacang sampai rangup.', on_screen: 'Langkah 2', keywords: 'fried anchovies', image_prompt: 'crispy fried anchovies' },
+          { voiceover: 'Apa lauk kegemaran anda? Komen di bawah!', on_screen: 'Komen!', keywords: 'food table', image_prompt: 'malaysian food table' },
+        ],
+        caption: 'Nasi lemak cepat 🍛 Anda suka pedas? #food', hashtags: ['#nasilemak', 'resepi', 'fyp', 'masakan', 'malaysianfood', 'extra1', 'extra2'],
+      };
     } else if (sys.includes("Today's picks")) {
       stats.byKind.picks = (stats.byKind.picks ?? 0) + 1;
       const ids = [...sys.matchAll(/"id": (\d+)/g)].map(m => Number(m[1]));
@@ -125,5 +141,89 @@ export function startMockLlm(port = 0): Promise<{ url: string; stats: MockStats;
   return new Promise(resolve => server.listen(port, '127.0.0.1', () => {
     const a = server.address() as any;
     resolve({ url: `http://127.0.0.1:${a.port}`, stats, close: () => server.close() });
+  }));
+}
+
+// ---------------------------------------------------------------- media mocks for video creation
+import { WebSocketServer } from 'ws';
+import jpeg from 'jpeg-js';
+
+function makeFile(name: string, args: string[]) {
+  const f = path.join(DIR, name);
+  if (!fs.existsSync(f)) execFileSync('ffmpeg', ['-loglevel', 'error', '-y', ...args, f]);
+  return f;
+}
+export function testAssets() {
+  return {
+    stock: makeFile('stock.mp4', ['-f', 'lavfi', '-i', 'testsrc2=s=720x1280:d=6:r=30', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p']),
+    music: makeFile('music.mp3', ['-f', 'lavfi', '-i', 'sine=frequency=330:duration=20', '-c:a', 'libmp3lame', '-b:a', '64k']),
+    logo: makeFile('logo.png', ['-f', 'lavfi', '-i', 'color=c=red:s=200x80:d=1', '-frames:v', '1']),
+  };
+}
+function speechMp3(seconds: number) {
+  const s = Math.max(1, Math.round(seconds * 2) / 2);
+  return makeFile(`speech-${s}.mp3`, ['-f', 'lavfi', '-i', `sine=frequency=520:duration=${s}`, '-ac', '1', '-ar', '24000', '-c:a', 'libmp3lame', '-b:a', '48k']);
+}
+
+export interface MediaStats { edgeRequests: number; edgeBadAuth: number; pexels: number; images: number; lastVoice: string }
+
+/** Fake Edge TTS (same websocket protocol), fake Pexels and a fake OpenAI images API. */
+export function startMediaMocks(): Promise<{ url: string; ws: string; stats: MediaStats; close: () => void }> {
+  const stats: MediaStats = { edgeRequests: 0, edgeBadAuth: 0, pexels: 0, images: 0, lastVoice: '' };
+  const assets = testAssets();
+  let base = '';
+  const server = http.createServer(async (req, res) => {
+    const u = new URL(req.url!, 'http://x');
+    let body = ''; for await (const c of req) body += c;
+    if (u.pathname === '/videos/search') {
+      stats.pexels++;
+      const q = u.searchParams.get('query') ?? '';
+      const link = q.includes('tiktok') ? 'https://v16-webapp.tiktokcdn.com/someone-elses-video.mp4' : `${base}/stock.mp4`;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ videos: [{ duration: 6, user: { name: 'Test Shooter' }, video_files: [{ file_type: 'video/mp4', link, height: 1280, width: 720 }] }] }));
+      return;
+    }
+    if (u.pathname === '/stock.mp4') { res.writeHead(200, { 'content-type': 'video/mp4' }); fs.createReadStream(assets.stock).pipe(res); return; }
+    if (u.pathname === '/v1/images/generations') {
+      stats.images++;
+      const j = JSON.parse(body || '{}');
+      const w = 256, h = 384, data = Buffer.alloc(w * h * 4);
+      for (let i = 0; i < w * h; i++) { data[i * 4] = (i % w) & 255; data[i * 4 + 1] = 120; data[i * 4 + 2] = Math.floor(i / w) & 255; data[i * 4 + 3] = 255; }
+      const b64 = Buffer.from(jpeg.encode({ width: w, height: h, data }, 80).data).toString('base64');
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: [{ b64_json: b64, revised_prompt: j.prompt }] }));
+      return;
+    }
+    res.writeHead(404); res.end();
+  });
+  const wss = new WebSocketServer({ noServer: true });
+  server.on('upgrade', (req, socket, head) => {
+    const u = new URL(req.url!, 'http://x');
+    const ok = /^[0-9A-F]{64}$/.test(u.searchParams.get('Sec-MS-GEC') ?? '') && u.searchParams.get('TrustedClientToken') && String(req.headers.origin).startsWith('chrome-extension://');
+    if (!ok) { stats.edgeBadAuth++; socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return; }
+    wss.handleUpgrade(req, socket, head, ws => {
+      ws.on('message', (data: Buffer) => {
+        const msg = data.toString();
+        if (!msg.includes('Path:ssml')) return;
+        stats.edgeRequests++;
+        stats.lastVoice = msg.match(/voice name='([^']+)'/)?.[1] ?? '';
+        const text = (msg.match(/<prosody[^>]*>([\s\S]*?)<\/prosody>/)?.[1] ?? '').trim();
+        const words = text.split(/\s+/).filter(Boolean);
+        const meta = { Metadata: words.map((w, i) => ({ Type: 'WordBoundary', Data: { Offset: Math.round(i * 0.3 * 1e7), Duration: 2.5e6, text: { Text: w } } })) };
+        ws.send(`X-RequestId:x\r\nContent-Type:application/json; charset=utf-8\r\nPath:audio.metadata\r\n\r\n${JSON.stringify(meta)}`);
+        const audio = fs.readFileSync(speechMp3(words.length * 0.3 + 0.2));
+        const header = Buffer.from('X-RequestId:x\r\nContent-Type:audio/mpeg\r\nPath:audio\r\n');
+        for (let o = 0; o < audio.length; o += 4096) {
+          const len = Buffer.alloc(2); len.writeUInt16BE(header.length);
+          ws.send(Buffer.concat([len, header, audio.subarray(o, o + 4096)]));
+        }
+        ws.send('X-RequestId:x\r\nPath:turn.end\r\n\r\n{}');
+      });
+    });
+  });
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => {
+    const a = server.address() as any;
+    base = `http://127.0.0.1:${a.port}`;
+    resolve({ url: base, ws: `ws://127.0.0.1:${a.port}/edge`, stats, close: () => { wss.close(); server.close(); } });
   }));
 }

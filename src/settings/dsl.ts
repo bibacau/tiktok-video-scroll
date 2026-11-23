@@ -20,6 +20,7 @@ export type Field =
   | (Base & { type: 'weights'; default: Record<string, number>; options: Option[] })
   | (Base & { type: 'windows'; default: Record<string, Array<{ start: string; end: string }>> })
   | (Base & { type: 'json'; default: unknown; rows?: number })
+  | (Base & { type: 'file'; default: string; kind: 'fonts' | 'logos' | 'music' })
   | (Base & { type: 'group'; fields: Record<string, Field>; collapsed?: boolean });
 
 export const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
@@ -42,6 +43,7 @@ export const s = {
   list: (label: string, def: string[] = [], o: Opts = {}): Field => ({ type: 'list', label, default: def, ...o } as Field),
   weights: (label: string, def: Record<string, number>, options: Array<Option | string>, o: Opts = {}): Field => ({ type: 'weights', label, default: def, options: options.map(opt), ...o } as Field),
   windows: (label: string, def: Record<string, Array<{ start: string; end: string }>>, o: Opts = {}): Field => ({ type: 'windows', label, default: def, ...o } as Field),
+  file: (label: string, kind: 'fonts' | 'logos' | 'music', o: Opts = {}): Field => ({ type: 'file', label, default: '', kind, ...o } as Field),
   json: (label: string, def: unknown, o: Opts = {}): Field => ({ type: 'json', label, default: def, rows: 10, ...o } as Field),
   group: (label: string, fields: Record<string, Field>, o: Opts = {}): Field => ({ type: 'group', label, fields, ...o } as Field),
 };
@@ -67,6 +69,7 @@ export function coerce(field: Field, value: unknown): any {
       if (typeof value !== 'string') return field.default;
       return field.maxLength ? value.slice(0, field.maxLength) : value.slice(0, 50_000);
     }
+    case 'file': return typeof value === 'string' && !/[\\/]|\.\./.test(value) ? value.slice(0, 200) : '';
     case 'time': return typeof value === 'string' && TIME.test(value) ? value : field.default;
     case 'number': case 'slider': {
       const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;

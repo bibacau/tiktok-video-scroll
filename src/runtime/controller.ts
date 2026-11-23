@@ -18,7 +18,7 @@ export interface Status {
   presetId: string | null; presetName: string | null;
   startedAt: string | null; plannedSeconds: number; activeSeconds: number; endsAt: string | null;
   source: string | null; current: any; thinking: string; counts: { videos: number; watched: number; skipped: number; saved: number };
-  alert: { kind: string; message: string; at: string } | null;
+  alert: { kind: string; message: string; at: string; profile?: string } | null;
   browserOpen: boolean; restarts: number;
 }
 
@@ -49,7 +49,7 @@ class Controller extends EventEmitter {
     this.emit('status', this.status);
   }
   private active() { return this.activeMs + (this.activeSince ? Date.now() - this.activeSince : 0); }
-  snapshot() { this.set({}); return { ...this.status, today: { watchedSeconds: watchedSecondsToday(), spentRM: spentRM('day') } }; }
+  snapshot() { this.set({}); return { ...this.status, browserProfile: this.browser.profile(), today: { watchedSeconds: watchedSecondsToday(), spentRM: spentRM('day') } }; }
 
   // --------------------------------------------------------------- commands
   async start(opts: { minutes?: number; presetId?: string; trigger?: 'manual' | 'schedule'; until?: number; entry?: PlanEntry } = {}) {
@@ -100,6 +100,7 @@ class Controller extends EventEmitter {
       if (signal.aborted) status = 'stopped';
     } catch (e: any) {
       if (signal.aborted || e instanceof SessionOver) status = 'stopped';
+      else if (e?.code === 'PROFILE_IN_USE') { status = 'blocked'; note = e.message; log('alert', 'browser', e.message); this.set({ alert: { kind: 'profile_busy', message: e.message, at: nowIso(), profile: e.profile } }); }
       else if (e instanceof BudgetExceeded) { status = 'budget'; note = e.message; logBudgetStop(e); this.set({ alert: { kind: 'budget', message: e.message, at: nowIso() } }); }
       else { status = 'error'; note = e.message; log('error', 'session', `Session #${sessionId} failed: ${e.message}`); this.set({ alert: { kind: 'error', message: e.message, at: nowIso() } }); }
     }
@@ -185,7 +186,11 @@ class Controller extends EventEmitter {
   }
 
   async openBrowser(url?: string) {
-    const page = await this.browser.ensure();
+    let page;
+    try { page = await this.browser.ensure(); } catch (e: any) {
+      if (e?.code === 'PROFILE_IN_USE') this.set({ alert: { kind: 'profile_busy', message: e.message, at: nowIso(), profile: e.profile } });
+      throw e;
+    }
     if (url) await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
     else if (page.url() === 'about:blank') await page.goto(getAppSettings().browser.baseUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
     this.startScreenshots();

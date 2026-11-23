@@ -39,3 +39,25 @@ test('launches as a normal browser process (no Playwright launch flags) and atta
   await again.detach(); await b.close();
   assert.equal((await m.edge.profileProcesses(b.profileDir())).length, 0, 'closed completely');
 });
+
+test('profile held by another window → clear PROFILE_IN_USE error; "close it for me" frees only that profile', { skip: !BROWSER && 'no browser' }, async () => {
+  const { spawn } = await import('node:child_process');
+  const dir = m.edge.profileDirFor('t-busy'); fs.mkdirSync(dir, { recursive: true });
+  const other = m.edge.profileDirFor('t-other'); fs.mkdirSync(other, { recursive: true });
+  const extra = [process.getuid?.() === 0 ? '--no-sandbox' : '', process.env.DISPLAY ? '' : '--headless=new'].filter(Boolean);
+  // the "user" opens the profile by hand (no debugging port), plus an unrelated browser profile
+  spawn(BROWSER!, [`--user-data-dir=${dir}`, '--no-first-run', ...extra, 'about:blank'], { stdio: 'ignore', detached: true }).unref();
+  spawn(BROWSER!, [`--user-data-dir=${other}`, '--no-first-run', ...extra, 'about:blank'], { stdio: 'ignore', detached: true }).unref();
+  for (let i = 0; i < 30 && !(await m.edge.profileProcesses(dir)).length; i++) await new Promise(r => setTimeout(r, 200));
+  assert.equal((await m.edge.profileState('t-busy')).state, 'busy');
+  const b = new m.edge.BrowserManager(() => 't-busy');
+  await assert.rejects(b.ensure(), (e: any) => e.code === 'PROFILE_IN_USE' && e.pids.length > 0 && /Close it for me/.test(e.message));
+  const killed = await m.edge.closeProfile('t-busy');
+  assert.ok(killed > 0);
+  assert.equal((await m.edge.profileState('t-busy')).state, 'closed');
+  assert.ok((await m.edge.profileProcesses(other)).length > 0, 'other profile untouched');
+  await b.ensure();
+  assert.equal((await m.edge.profileState('t-busy')).state, 'agent');
+  await b.close();
+  await m.edge.killProfileProcesses(other);
+});

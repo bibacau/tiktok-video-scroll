@@ -30,7 +30,8 @@ export function StatusPage() {
         <p class="muted">The agent never solves captchas or logs in by itself. Fix it in the Edge window on your PC, then press Resume.</p>
         <button class="btn primary big" onClick=${act('/api/control/resume', 'Resumed')}>I've handled it — Resume</button>
       </section>` : null}
-      ${s.alert && s.state !== 'needs_user' ? html`<section class="card alertcard soft"><p>⚠️ ${s.alert.message}</p><button class="btn small ghost" onClick=${act('/api/control/dismiss-alert')}>Dismiss</button></section>` : null}
+      ${s.alert?.kind === 'profile_busy' ? html`<${ProfileBusy} alert=${s.alert} />` : null}
+      ${s.alert && s.state !== 'needs_user' && s.alert.kind !== 'profile_busy' ? html`<section class="card alertcard soft"><p>⚠️ ${s.alert.message}</p><button class="btn small ghost" onClick=${act('/api/control/dismiss-alert')}>Dismiss</button></section>` : null}
 
       <section class="card">
         <div class="statehead">
@@ -54,6 +55,7 @@ export function StatusPage() {
             <input type="number" min="1" max="600" placeholder=${chosen?.data.schedule.manualMinutes ?? 10} value=${minutes} onInput=${e => setMinutes(e.target.value)} />
             <button class="btn primary big" onClick=${start}>▶ Start now</button>
           </div>`}
+        <${BrowserState} profile=${s.browserProfile} />
         <div class="controls">
           ${s.browserOpen
             ? html`<button class="btn small ghost" disabled=${running} onClick=${act('/api/control/close-browser')}>Close browser</button>`
@@ -107,4 +109,36 @@ export function StatusPage() {
       </section>
     </div>
   </div>`;
+}
+
+function ProfileBusy({ alert }) {
+  const [busy, setBusy] = useState(false);
+  const close = guard(async () => {
+    setBusy(true);
+    try { const r = await post(`/api/browser/profiles/${encodeURIComponent(alert.profile)}/close`); toast(r.killed ? `Closed ${r.killed} Edge process(es) for "${alert.profile}"` : 'Nothing was open any more'); }
+    finally { setBusy(false); }
+  });
+  return html`<section class="card alertcard">
+    <h3>🔒 The agent's Edge profile is in use</h3>
+    <p>${alert.message}</p>
+    <p class="muted small">Only processes using the "${alert.profile}" profile folder are closed — your normal Edge windows are not touched. Unsaved work in that window is lost.</p>
+    <div class="controls"><button class="btn primary" disabled=${busy} onClick=${close}>${busy ? 'Closing…' : 'Close it for me'}</button>
+      <button class="btn ghost" onClick=${guard(() => post('/api/control/dismiss-alert'))}>Dismiss</button></div>
+  </section>`;
+}
+
+/** Live state of the watcher's Edge profile, refreshed every few seconds while idle. */
+export function BrowserState({ profile }) {
+  const [st, setSt] = useState(null);
+  useEffect(() => {
+    if (!profile) return;
+    let stop = false;
+    const load = () => get(`/api/browser/profiles/${encodeURIComponent(profile)}`).then(r => !stop && setSt(r)).catch(() => {});
+    load(); const t = setInterval(load, 5000);
+    return () => { stop = true; clearInterval(t); };
+  }, [profile]);
+  if (!st) return null;
+  const label = { closed: 'closed', agent: 'open (agent window)', busy: 'open in another window — the agent cannot use it' }[st.state];
+  return html`<p class="small muted">Edge profile "${profile}": <b class=${st.state === 'busy' ? 'warntext' : ''}>${label}</b>
+    ${st.state === 'busy' ? html` <button class="btn small" onClick=${guard(async () => { await post(`/api/browser/profiles/${encodeURIComponent(profile)}/close`); toast('Closed'); })}>Close it for me</button>` : null}</p>`;
 }

@@ -153,3 +153,4 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { text
 .pill.queued, .pill.planning, .pill.scripting, .pill.voicing, .pill.visuals, .pill.rendering { background: #b4530922; color: var(--warn); }
 .scripted { display: grid; gap: 6px; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
 .scene { border: 1px dashed var(--line); border-radius: 8px; padding: 8px; display: grid; gap: 4px; }
+.warntext { color: var(--warn); }

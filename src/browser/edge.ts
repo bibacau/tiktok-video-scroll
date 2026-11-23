@@ -133,6 +133,14 @@ export async function startNormalBrowser(profileName: string, url = 'about:blank
   throw new Error('The browser did not open its debugging port within 20 seconds.');
 }
 
+/** What is happening with a profile folder right now. */
+export async function profileState(profileName: string): Promise<{ profile: string; state: 'closed' | 'agent' | 'busy'; pids: number[]; port: number | null }> {
+  const dir = profileDirFor(profileName);
+  const port = await livePort(dir);
+  const pids = await profileProcesses(dir);
+  return { profile: profileName, state: port ? 'agent' : pids.length ? 'busy' : 'closed', pids, port };
+}
+
 /** Close a profile's browser nicely (Browser.close), then make sure no process is left. */
 export async function closeProfile(profileName: string) {
   const dir = profileDirFor(profileName);

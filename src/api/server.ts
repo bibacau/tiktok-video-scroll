@@ -8,6 +8,7 @@ import fastifyMultipart from '@fastify/multipart';
 import { creator, getCreation, listCreations, type Step } from '../create/pipeline.ts';
 import { listFiles, saveUpload, deleteUpload, isKind } from '../files.ts';
 import { listWindowsVoices } from '../create/tts.ts';
+import { closeProfile, profileState } from '../browser/edge.ts';
 import { EDGE_VOICES } from '../settings/schema.ts';
 import { paths } from '../paths.ts';
 import { getDb } from '../db.ts';
@@ -110,6 +111,16 @@ export async function buildServer(): Promise<FastifyInstance> {
   app.post('/api/control/open-browser', async req => { await controller.openBrowser((req.body as any)?.url); return controller.snapshot(); });
   app.post('/api/control/close-browser', async () => { await controller.closeBrowser(); return controller.snapshot(); });
   app.post('/api/control/dismiss-alert', async () => { controller.dismissAlert(); return controller.snapshot(); });
+  app.get('/api/browser/profiles/:name', async req => profileState((req.params as any).name));
+  app.post('/api/browser/profiles/:name/close', async req => {
+    const name = String((req.params as any).name);
+    if (controller.status.state !== 'idle' && controller.browser.profile() === name) throw Object.assign(new Error('Stop the session first'), { statusCode: 409 });
+    if (controller.browser.profile() === name) await controller.browser.detach();
+    const killed = await closeProfile(name);
+    log('info', 'browser', `Closed Edge profile "${name}" (${killed} leftover process(es) ended)`);
+    if (controller.status.alert?.profile === name) controller.dismissAlert();
+    return { ok: true, killed, ...(await profileState(name)) };
+  });
   app.get('/api/screenshot', async () => controller.lastScreenshot ?? {});
 
   // ----------------------------------------------------------- schedule

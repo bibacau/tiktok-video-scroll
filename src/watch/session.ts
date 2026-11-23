@@ -119,7 +119,7 @@ export async function runSession(host: SessionHost): Promise<Counters> {
       if (!(await tiktok.next(signal))) { log('warn', 'watch', 'Could not move to the next video — reopening source'); source = null; }
     } catch (e: any) {
       if (signal.aborted || e instanceof SessionOver) break;
-      if (e instanceof BudgetExceeded) throw e;
+      if (e instanceof BudgetExceeded || e?.code === 'PROFILE_IN_USE') throw e;
       if (e instanceof GuardHit) continue;
       failures++;
       if (isBrowserGone(e)) {

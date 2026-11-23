@@ -1,0 +1,43 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { getDb, nowIso } from '../db.js';
+import { paths } from '../paths.js';
+
+/** Every prompt the app sends. Default text lives in src/prompts/<key>.md; edits are stored in the DB. */
+export const PROMPTS: Array<{ key: string; title: string; step: string; variables: string[] }> = [
+  { key: 'watch_decide', title: 'Watch: watch or skip?', step: 'watch',
+    variables: ['persona', 'interests', 'instructions', 'strictness', 'languages', 'video', 'frames_note'] },
+  { key: 'watch_analyze', title: 'Watch: second look & what to save', step: 'analyze',
+    variables: ['persona', 'instructions', 'fields', 'video', 'first_decision', 'frames_note'] },
+  { key: 'picks', title: "Today's picks", step: 'picks',
+    variables: ['persona', 'criteria', 'count', 'candidates', 'instructions'] },
+];
+
+const defaultText = (key: string) => {
+  try { return fs.readFileSync(path.join(paths.defaultPrompts, `${key}.md`), 'utf8'); } catch { return ''; }
+};
+
+export function getPrompt(key: string): string {
+  const row = getDb().prepare('SELECT text FROM prompts WHERE key = ?').get(key) as { text: string } | undefined;
+  return row?.text ?? defaultText(key);
+}
+export function setPrompt(key: string, text: string) {
+  if (!PROMPTS.some(p => p.key === key)) throw Object.assign(new Error('Unknown prompt'), { statusCode: 404 });
+  getDb().prepare('INSERT INTO prompts (key, text, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET text = excluded.text, updated_at = excluded.updated_at')
+    .run(key, String(text).slice(0, 100_000), nowIso());
+}
+export function resetPrompt(key: string) { getDb().prepare('DELETE FROM prompts WHERE key = ?').run(key); }
+export function listPrompts() {
+  return PROMPTS.map(p => {
+    const row = getDb().prepare('SELECT text, updated_at FROM prompts WHERE key = ?').get(p.key) as any;
+    return { ...p, text: row?.text ?? defaultText(p.key), default: defaultText(p.key), custom: !!row, updated_at: row?.updated_at ?? null };
+  });
+}
+
+/** {{name}} substitution. Unknown variables are left empty. */
+export function render(template: string, vars: Record<string, unknown>) {
+  return template.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, k) => {
+    const v = vars[k];
+    return v === undefined || v === null ? '' : typeof v === 'string' ? v : JSON.stringify(v, null, 1);
+  });
+}

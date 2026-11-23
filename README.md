@@ -17,19 +17,52 @@ Everything is a setting: what to watch, when and for how long, what to save, the
 
 ## What you need to do by hand (one time)
 
-1. **Install Node.js 22 LTS** (22.13 or newer) from https://nodejs.org. Use the default options.
-2. **Microsoft Edge** comes with Windows 10/11, so there's nothing to install.
-3. **Download this repo** (green *Code* button → *Download ZIP*, then unzip it) or `git clone` it. Put it somewhere like `C:\tiktok-agent`.
-4. Double-click **`start.bat`**. The first run installs dependencies, which takes about a minute. Your browser then opens the dashboard.
-5. **DeepSeek API key:** create one at https://platform.deepseek.com, add a little credit, then paste the key in *AI & Prompts → AI provider → API key* and press **Save**. Press **Test AI connection** to check it.
-6. **Log in to TikTok once:** on the *Status* tab press **Open browser (to log in)**. A separate Edge window opens with its own profile, kept in `data/edge-profiles/watcher`. Log in to TikTok there yourself, and then you can leave it open. You stay logged in between runs.
-7. **Phone access (optional):** allow the port through Windows Firewall. Open *PowerShell as Administrator* and run:
+1. **Install Node.js 24 LTS** (any version from 22.18 up works) from https://nodejs.org. Use the official **Windows Installer (.msi)** and keep the default options. Don't use a ZIP of Node.
+2. **Install Git** from https://git-scm.com/download/win (default options).
+3. **Microsoft Edge** comes with Windows, so there's nothing to install. **ffmpeg** is needed for video creation; see [Video creation](#video-creation-phase-2).
+4. **Get the app with `git clone`. Don't download the ZIP.** Files from a ZIP downloaded in a browser are marked "from the internet", and Smart App Control / SmartScreen may block them. Cloned files aren't marked. Open *Terminal* (or PowerShell) and run:
+   ```powershell
+   cd $HOME
+   git clone -b claude/clever-dirac-tbpwhd https://github.com/bibacau/tpot-lazer.git tiktok-agent
+   cd tiktok-agent
+   ```
+   To update later: `git pull` inside that folder.
+5. **Start it.** Either double-click **`start.bat`**, or start it without any .bat file, which always works even if Windows blocks .bat files:
+   ```powershell
+   npm install --omit=dev
+   npm start
+   ```
+   Keep that window open; press **Ctrl+C** to stop. Then open http://localhost:8004.
+6. **DeepSeek API key:** create one at https://platform.deepseek.com, add a little credit, then paste the key in *AI & Prompts → AI provider → API key* and press **Save**. Press **Test AI connection** to check it.
+7. **Image understanding:** DeepSeek can't see images, so set up a [vision helper](#image-understanding-vision-helper). Gemini or Ollama cost little or nothing.
+8. **Log in to TikTok once:** on the *Status* tab press **Open browser (to log in)**. A separate Edge window opens with its own profile, kept in `data/edge-profiles/watcher`. Log in to TikTok there yourself. You stay logged in between runs.
+9. **Phone access (optional):** allow the port through Windows Firewall. Open *PowerShell as Administrator* and run:
    ```powershell
    netsh advfirewall firewall add rule name="TikTok Agent 8004" dir=in action=allow protocol=TCP localport=8004
    ```
    Then open the address shown under *Settings → Open on your phone* (e.g. `http://192.168.1.23:8004`). If other people use your Wi-Fi, set a **dashboard password** in Settings.
 
-To stop everything, double-click **`stop.bat`**. If the app crashes, it restarts by itself. Logs are in `data/logs/app.log`.
+To stop everything, double-click **`stop.bat`**, or press Ctrl+C in the `npm start` window. When started with `start.bat`, the app restarts itself if it crashes. Logs are in `data/logs/app.log`.
+
+## Windows blocked the app (Smart App Control / SmartScreen)
+
+Windows 11 **Smart App Control** blocks programs and scripts that are unsigned and come from the internet. What to do, in order:
+
+1. **Unblock the folder.** Open PowerShell **in the app folder** and run:
+   ```powershell
+   Get-ChildItem -Recurse -File | Unblock-File
+   ```
+   `start.bat` does this itself on every start. If `start.bat` itself is the blocked file, it can't run, so use this command once by hand.
+2. **Use `git clone` instead of the ZIP** (see step 4 above). Cloned files are never marked as downloaded.
+3. **Start without .bat files:** in a terminal in the app folder, run `npm install --omit=dev` and then `npm start`. This only runs `node.exe` and `npm`, both installed and signed by the official Node.js installer. The app ships no other executables. Earlier versions included `esbuild.exe`, which Smart App Control blocked; it has been removed.
+4. **If the blocked file is `node.exe`:** your Node.js probably came from a ZIP or a third-party tool (nvm, fnm, Volta, a portable build), and those copies may lack a trusted signature. Fix:
+   1. Settings → Apps → Installed apps → uninstall every *Node.js* entry. If you used nvm-windows, uninstall it too.
+   2. Delete leftovers if they exist: `C:\Program Files\nodejs` and `%AppData%\npm`.
+   3. Download the **Windows Installer (.msi)** for the LTS version from https://nodejs.org/en/download (it is signed by the OpenJS Foundation) and install with default options.
+   4. Open a **new** terminal and check `node -v` (needs 22.18 or newer). Then in the app folder: `Remove-Item -Recurse -Force node_modules` → `npm install --omit=dev` → `npm start`.
+5. **If ffmpeg.exe is blocked** (video creation): install it with `winget install Gyan.FFmpeg`. If it's still blocked, set the path to a different build in *Settings → Video tools*.
+
+> ⚠️ **Don't turn Smart App Control off just to run this app.** Once you switch it off, you can't turn it back on without resetting or reinstalling Windows. The steps above avoid the need.
 
 ## First test (10 minutes)
 
@@ -85,8 +118,9 @@ test/                    tests (fake tiktok.com + fake AI API)
 ## Developing
 
 ```
-npm install
-npm start          # http://localhost:8004
+npm install        # includes TypeScript for type checking
+npm start          # http://localhost:8004 — runs src/index.ts directly with Node's built-in type stripping
 npm test           # unit + end-to-end (needs ffmpeg + a Chromium; set BROWSER_PATH)
 npm run typecheck
 ```
+TypeScript is restricted to "erasable" syntax (no enums or parameter properties) so plain Node can run it without a compiler.

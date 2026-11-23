@@ -9,6 +9,7 @@ import { paths } from '../paths.ts';
 import { getAppSettings } from '../settings/store.ts';
 import { log } from '../log.ts';
 import { browserCall, cdpVersion } from './cdp.ts';
+import { cropResize, type Rect } from './image.ts';
 
 const SCRIPTS = fs.readFileSync(path.join(paths.root, 'src', 'browser', 'page-scripts.js'), 'utf8');
 
@@ -254,20 +255,18 @@ export class BrowserManager {
   }
 
   /**
-   * Screenshot straight from the compositor via CDP. Unlike page.screenshot it never changes the
-   * window's size/zoom (which made the window jitter on Windows display scaling).
+   * Screenshot straight from the compositor via CDP: the plain viewport, with no clip, no scale and
+   * no device-metrics override (those make Chromium re-layout the page, which showed as the window
+   * jittering on Windows). Cropping and shrinking happen in Node instead.
    */
-  async capture(opts: { clip?: { x: number; y: number; width: number; height: number }; quality?: number; maxWidth?: number } = {}): Promise<Buffer> {
+  async capture(opts: { clip?: Rect; quality?: number; maxWidth?: number } = {}): Promise<Buffer> {
     const page = await this.ensure();
     if (!this.cdp) this.cdp = await this.ctx!.newCDPSession(page);
-    const vp = await page.evaluate('({ w: innerWidth, h: innerHeight })') as { w: number; h: number };
-    const clip = opts.clip ?? { x: 0, y: 0, width: vp.w, height: vp.h };
-    const scale = opts.maxWidth ? Math.min(1, opts.maxWidth / Math.max(1, clip.width)) : 1;
-    const r = await this.cdp.send('Page.captureScreenshot', {
-      format: 'jpeg', quality: opts.quality ?? 60, fromSurface: true, captureBeyondViewport: false, optimizeForSpeed: true,
-      clip: { x: Math.round(clip.x), y: Math.round(clip.y), width: Math.max(16, Math.round(clip.width)), height: Math.max(16, Math.round(clip.height)), scale },
-    } as any);
-    return Buffer.from((r as any).data, 'base64');
+    const r = await this.cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 85, fromSurface: true, captureBeyondViewport: false } as any);
+    const raw = Buffer.from((r as any).data, 'base64');
+    if (!opts.clip && !opts.maxWidth) return raw;
+    const dpr = Number(await page.evaluate('devicePixelRatio')) || 1;
+    return cropResize(raw, opts.clip ?? null, dpr, opts.maxWidth ?? 4096, opts.quality ?? 60);
   }
 
   async screenshot(): Promise<Buffer | null> {

@@ -95,3 +95,23 @@ test('"Log in to TikTok" opens a normal window (webdriver false) and detects the
   assert.deepEqual(done.cookies, ['sessionid']);
   srv.close();
 });
+
+test('screenshots never resize or re-layout the page (no window jitter)', { skip: !BROWSER && 'no browser' }, async () => {
+  const jpeg = (await import('jpeg-js')).default;
+  const b = new m.edge.BrowserManager(() => 't-jitter');
+  const page = await b.ensure();
+  await page.goto('data:text/html,<body style="margin:0;height:3000px"><script>window.__r=0;addEventListener("resize",()=>window.__r++);new ResizeObserver(()=>window.__ro=(window.__ro||0)+1).observe(document.documentElement)</script>');
+  await new Promise(r => setTimeout(r, 300));
+  const before = await page.evaluate('({ w: innerWidth, h: innerHeight, ro: window.__ro || 0 })') as any;
+  for (let i = 0; i < 15; i++) {
+    const shot = await b.capture({ clip: { x: 10, y: 20, width: 300, height: 400 }, maxWidth: 150, quality: 60 });
+    const img = jpeg.decode(shot);
+    assert.equal(img.width, 150); assert.equal(img.height, 200);
+    await b.screenshot();
+  }
+  const after = await page.evaluate('({ w: innerWidth, h: innerHeight, r: window.__r, ro: window.__ro || 0 })') as any;
+  assert.equal(after.r, 0, 'no resize events');
+  assert.equal(after.ro, before.ro, 'no re-layout of the root element');
+  assert.deepEqual([after.w, after.h], [before.w, before.h]);
+  await b.close();
+});

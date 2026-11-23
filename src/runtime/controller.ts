@@ -193,7 +193,6 @@ class Controller extends EventEmitter {
     }
     if (url) await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
     else if (page.url() === 'about:blank') await page.goto(getAppSettings().browser.baseUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
-    this.startScreenshots();
     this.set({});
   }
   async closeBrowser() {
@@ -204,17 +203,23 @@ class Controller extends EventEmitter {
   dismissAlert() { this.set({ alert: null }); }
 
   // ------------------------------------------------------- live screenshots
+  /** Live view: only while a session is active AND someone is looking. Never while idle. */
   private startScreenshots() {
     if (this.screenshotTimer) return;
     const tick = async () => {
-      if (this.viewers > 0 && this.browser.isOpen()) {
-        const shot = await this.browser.screenshot();
-        if (shot) { this.lastScreenshot = { at: nowIso(), base64: shot.toString('base64') }; this.emit('screenshot', this.lastScreenshot); }
-      }
-      if (!this.browser.isOpen() && this.status.state === 'idle') { this.screenshotTimer = null; this.set({}); return; }
+      const active = ['running', 'starting', 'paused', 'needs_user'].includes(this.status.state);
+      if (!active) { this.screenshotTimer = null; return; }
+      if (this.viewers > 0 && this.browser.isOpen()) await this.snapshotNow();
       this.screenshotTimer = setTimeout(tick, getAppSettings().browser.screenshotSeconds * 1000);
     };
     this.screenshotTimer = setTimeout(tick, 1000);
+  }
+
+  /** One screenshot on request (also used by the live view). */
+  async snapshotNow() {
+    const shot = await this.browser.screenshot();
+    if (shot) { this.lastScreenshot = { at: nowIso(), base64: shot.toString('base64') }; this.emit('screenshot', this.lastScreenshot); }
+    return this.lastScreenshot;
   }
 
   // ------------------------------------------------------------- scheduler

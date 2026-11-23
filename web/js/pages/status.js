@@ -102,7 +102,8 @@ export function StatusPage() {
       <section class="card">
         <h3>Browser ${l.screenshot ? html`<span class="muted small">${fmtTime(l.screenshot.at)}</span>` : null}</h3>
         ${l.screenshot ? html`<img class="shot" src=${`data:image/jpeg;base64,${l.screenshot.base64}`} alt="Live browser view" />`
-          : html`<p class="muted">The live view appears when the browser is open.</p>`}
+          : html`<p class="muted">The live view appears while a session is running.</p>`}
+        ${s.state === 'idle' && s.browserOpen ? html`<button class="btn small ghost" onClick=${act('/api/screenshot')}>📷 Take a snapshot</button>` : null}
       </section>
       <section class="card">
         <h3>Live log</h3>

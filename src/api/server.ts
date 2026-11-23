@@ -131,6 +131,7 @@ export async function buildServer(): Promise<FastifyInstance> {
     return { ok: true, killed, ...(await profileState(name)) };
   });
   app.get('/api/screenshot', async () => controller.lastScreenshot ?? {});
+  app.post('/api/screenshot', async () => (await controller.snapshotNow()) ?? {});
 
   // ----------------------------------------------------------- schedule
   app.get('/api/plan', async () => todaysPlan());

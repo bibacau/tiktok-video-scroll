@@ -55,11 +55,12 @@ export function StatusPage() {
             <input type="number" min="1" max="600" placeholder=${chosen?.data.schedule.manualMinutes ?? 10} value=${minutes} onInput=${e => setMinutes(e.target.value)} />
             <button class="btn primary big" onClick=${start}>▶ Start now</button>
           </div>`}
+        <${LoginBox} profile=${s.browserProfile} disabled=${running} />
         <${BrowserState} profile=${s.browserProfile} />
         <div class="controls">
           ${s.browserOpen
-            ? html`<button class="btn small ghost" disabled=${running} onClick=${act('/api/control/close-browser')}>Close browser</button>`
-            : html`<button class="btn small ghost" onClick=${act('/api/control/open-browser', 'Browser opening on your PC — log in to TikTok there')}>Open browser (to log in)</button>`}
+            ? html`<button class="btn small ghost" disabled=${running} onClick=${act('/api/control/close-browser')}>Close agent window</button>`
+            : html`<button class="btn small ghost" onClick=${act('/api/control/open-browser', 'Agent window opening on your PC')}>Open agent window</button>`}
         </div>
       </section>
 
@@ -141,4 +142,25 @@ export function BrowserState({ profile }) {
   const label = { closed: 'closed', agent: 'open (agent window)', busy: 'open in another window — the agent cannot use it' }[st.state];
   return html`<p class="small muted">Edge profile "${profile}": <b class=${st.state === 'busy' ? 'warntext' : ''}>${label}</b>
     ${st.state === 'busy' ? html` <button class="btn small" onClick=${guard(async () => { await post(`/api/browser/profiles/${encodeURIComponent(profile)}/close`); toast('Closed'); })}>Close it for me</button>` : null}</p>`;
+}
+
+/** "Log in to TikTok" in a normal, non-automated Edge window, with live detection. */
+export function LoginBox({ profile, disabled, label = 'Log in to TikTok' }) {
+  const [st, setSt] = useState(null);
+  useEffect(() => {
+    if (!profile) return;
+    get(`/api/login/${encodeURIComponent(profile)}`).then(setSt).catch(() => {});
+    const on = e => { if (e.detail.profile === profile) setSt(e.detail); };
+    window.addEventListener('login', on);
+    return () => window.removeEventListener('login', on);
+  }, [profile]);
+  const open = guard(async () => { setSt(await post(`/api/login/${encodeURIComponent(profile)}/open`)); toast('A normal Edge window is opening on your PC — log in there'); });
+  const check = guard(async () => setSt(await post(`/api/login/${encodeURIComponent(profile)}/check`)));
+  if (!st) return null;
+  const icon = st.waiting ? '⏳' : st.loggedIn ? '✅' : st.loggedIn === false ? '⚠️' : '❔';
+  return html`<div class="loginbox">
+    <div class="row wrap"><span class="grow">${icon} TikTok: <b>${st.message}</b>${st.checkedAt && !st.waiting ? html` <span class="muted small">(checked ${fmtTime(st.checkedAt)})</span>` : null}</span>
+      <button class="btn small ${st.loggedIn ? 'ghost' : 'primary'}" disabled=${disabled || st.waiting} onClick=${open}>${st.loggedIn ? 'Log in again' : label}</button>
+      ${!st.waiting ? html`<button class="btn small ghost" onClick=${check}>Check</button>` : null}</div>
+  </div>`;
 }

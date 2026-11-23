@@ -133,6 +133,24 @@ export async function startNormalBrowser(profileName: string, url = 'about:blank
   throw new Error('The browser did not open its debugging port within 20 seconds.');
 }
 
+/**
+ * Open the profile in a completely ordinary window: no debugging port, no automation at all
+ * (a debugging port alone makes Chrome/Edge report navigator.webdriver = true). Used for logging in.
+ */
+export async function startPlainBrowser(profileName: string, url: string): Promise<void> {
+  const dir = profileDirFor(profileName);
+  fs.mkdirSync(dir, { recursive: true });
+  try { fs.rmSync(path.join(dir, 'DevToolsActivePort'), { force: true }); } catch { /* */ }
+  const b = getAppSettings().browser;
+  const args = [`--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', `--window-size=${b.windowWidth},${b.windowHeight}`];
+  if (b.headless) args.push('--headless=new');
+  if (process.platform === 'linux' && process.getuid?.() === 0) args.push('--no-sandbox');
+  args.push(url);
+  log('info', 'browser', `Opening a normal (non-automated) window for profile "${profileName}"`);
+  spawn(findBrowserExecutable(), args, { detached: true, stdio: 'ignore' }).unref();
+  for (let i = 0; i < 50 && !(await profileProcesses(dir)).length; i++) await new Promise(r => setTimeout(r, 200));
+}
+
 /** What is happening with a profile folder right now. */
 export async function profileState(profileName: string): Promise<{ profile: string; state: 'closed' | 'agent' | 'busy'; pids: number[]; port: number | null }> {
   const dir = profileDirFor(profileName);

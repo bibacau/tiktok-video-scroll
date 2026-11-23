@@ -9,6 +9,7 @@ import { creator, getCreation, listCreations, type Step } from '../create/pipeli
 import { listFiles, saveUpload, deleteUpload, isKind } from '../files.ts';
 import { listWindowsVoices } from '../create/tts.ts';
 import { closeProfile, profileState } from '../browser/edge.ts';
+import { logins } from '../browser/login.ts';
 import { EDGE_VOICES } from '../settings/schema.ts';
 import { paths } from '../paths.ts';
 import { getDb } from '../db.ts';
@@ -111,6 +112,14 @@ export async function buildServer(): Promise<FastifyInstance> {
   app.post('/api/control/open-browser', async req => { await controller.openBrowser((req.body as any)?.url); return controller.snapshot(); });
   app.post('/api/control/close-browser', async () => { await controller.closeBrowser(); return controller.snapshot(); });
   app.post('/api/control/dismiss-alert', async () => { controller.dismissAlert(); return controller.snapshot(); });
+  app.get('/api/login/:profile', async req => logins.status((req.params as any).profile));
+  app.post('/api/login/:profile/check', async req => logins.check((req.params as any).profile));
+  app.post('/api/login/:profile/open', async req => {
+    const profile = String((req.params as any).profile);
+    const agentBusy = controller.browser.profile() === profile && controller.status.state !== 'idle';
+    if (!agentBusy && controller.browser.profile() === profile) await controller.browser.detach();
+    return logins.open(profile, { agentBusy });
+  });
   app.get('/api/browser/profiles/:name', async req => profileState((req.params as any).name));
   app.post('/api/browser/profiles/:name/close', async req => {
     const name = String((req.params as any).name);
@@ -213,12 +222,15 @@ export async function buildServer(): Promise<FastifyInstance> {
     const onCreation = (c: unknown) => send('creation', c);
     const onQueue = (q: unknown) => send('creatorQueue', q);
     const onDeleted = (id: unknown) => send('creationDeleted', id);
+    const onLogin = (st: unknown) => send('login', st);
+    logins.on('status', onLogin);
     controller.on('status', onStatus); controller.on('screenshot', onShot); bus.on('log', onLog);
     creator.on('update', onCreation); creator.on('queue', onQueue); creator.on('deleted', onDeleted);
     send('status', controller.snapshot());
     if (controller.lastScreenshot) send('screenshot', controller.lastScreenshot);
     socket.on('close', () => {
       controller.viewers--; controller.off('status', onStatus); controller.off('screenshot', onShot); bus.off('log', onLog);
+      logins.off('status', onLogin);
       creator.off('update', onCreation); creator.off('queue', onQueue); creator.off('deleted', onDeleted);
     });
   });

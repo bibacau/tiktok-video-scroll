@@ -14,7 +14,7 @@ export function connect() {
       if (data.alert && (!prev?.alert || prev.alert.at !== data.alert.at)) notifyAlert(data.alert);
     } else if (type === 'screenshot') live.screenshot = data;
     else if (type === 'log') live.logs = [data, ...live.logs].slice(0, 100);
-    else if (type === 'creation' || type === 'creatorQueue' || type === 'creationDeleted') { window.dispatchEvent(new CustomEvent(type, { detail: data })); return; }
+    else if (type === 'creation' || type === 'creatorQueue' || type === 'creationDeleted' || type === 'login') { window.dispatchEvent(new CustomEvent(type, { detail: data })); return; }
     live.subs.forEach(fn => fn());
   };
   ws.onclose = () => { live.connected = false; live.subs.forEach(fn => fn()); setTimeout(connect, 2000); };

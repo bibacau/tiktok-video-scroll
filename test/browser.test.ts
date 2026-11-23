@@ -61,3 +61,37 @@ test('profile held by another window → clear PROFILE_IN_USE error; "close it f
   await b.close();
   await m.edge.killProfileProcesses(other);
 });
+
+test('"Log in to TikTok" opens a normal window (webdriver false) and detects the login cookie', { skip: !BROWSER && 'no browser', timeout: 120_000 }, async () => {
+  const http = await import('node:http');
+  const reports: string[] = [];
+  const srv = http.createServer((req, res) => {
+    if (req.url!.startsWith('/report')) { reports.push(req.url!); res.end('ok'); return; }
+    // the "login page": logging in sets a long-lived session cookie
+    res.writeHead(200, { 'content-type': 'text/html', 'set-cookie': 'sessionid=secret-value; Max-Age=86400; Path=/' });
+    res.end(`<script>fetch('/report?wd=' + navigator.webdriver)</script><h1>logged in</h1>`);
+  }).listen(0, '127.0.0.1');
+  await new Promise(r => srv.once('listening', r));
+  const port = (srv.address() as any).port;
+  const app = m.store.getAppSettings();
+  app.browser = { ...app.browser, baseUrl: `http://127.0.0.1:${port}`, loginPath: '/login', loginCookieDomain: '127.0.0.1' };
+  m.store.saveAppSettings(app);
+  const { logins } = await import('../src/browser/login.ts');
+  assert.equal(logins.check('t-login').loggedIn, false);
+  const st = await logins.open('t-login');
+  assert.equal(st.waiting, true);
+  for (let i = 0; i < 50 && !reports.length; i++) await new Promise(r => setTimeout(r, 200));
+  if (process.env.DISPLAY) assert.deepEqual(reports, ['/report?wd=false'], 'login window is not marked as automated');
+  assert.equal((await m.edge.profileState('t-login')).state, 'busy', 'no debugging port on the login window');
+  // Detected while the window is still open (the browser writes cookies to disk at least every 30 s).
+  for (let i = 0; i < 100 && !logins.status('t-login').loggedIn; i++) await new Promise(r => setTimeout(r, 500));
+  assert.equal(logins.status('t-login').window, 'open');
+  // the user closes the window → watching stops
+  const pids = await m.edge.profileProcesses(m.edge.profileDirFor('t-login'));
+  for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } }
+  for (let i = 0; i < 40 && logins.status('t-login').waiting; i++) await new Promise(r => setTimeout(r, 500));
+  const done = logins.status('t-login');
+  assert.equal(done.loggedIn, true);
+  assert.deepEqual(done.cookies, ['sessionid']);
+  srv.close();
+});

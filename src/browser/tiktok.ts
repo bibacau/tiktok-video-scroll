@@ -101,10 +101,7 @@ export class TikTok {
   /** One JPEG frame of the video element. */
   async frame(rect: VideoInfo['rect']): Promise<Buffer> {
     const q = getAppSettings().browser.frameQuality;
-    return this.browser.guarded(page => page.screenshot({
-      type: 'jpeg', quality: q, scale: 'css',
-      clip: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.max(16, Math.round(rect.width)), height: Math.max(16, Math.round(rect.height)) },
-    }), 'capture frame', 20_000);
+    return this.browser.guarded(() => this.browser.capture({ clip: rect, quality: q, maxWidth: 720 }), 'capture frame', 20_000);
   }
 
   setPlaying(play: boolean) {

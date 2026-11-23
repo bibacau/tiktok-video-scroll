@@ -31,7 +31,7 @@ before(async () => {
     picks: await import('../src/watch/picks.ts'),
   };
   const app = m.store.getAppSettings();
-  app.browser = { ...app.browser, channel: 'custom', executablePath: BROWSER, headless: true, baseUrl: tt.url, windowWidth: 1100, windowHeight: 800, hangTimeoutSeconds: 20 };
+  app.browser = { ...app.browser, channel: 'custom', executablePath: BROWSER, headless: true, muteAudio: true, baseUrl: tt.url, windowWidth: 1100, windowHeight: 800, hangTimeoutSeconds: 20 };
   app.llm = { ...app.llm, baseUrl: llm.url, apiKey: 'sk-test-123456789', retries: 0 };
   app.budget = { ...app.budget, dailyCapRM: 0, monthlyCapRM: 0 };
   m.store.saveAppSettings(app);
@@ -94,7 +94,8 @@ test('captcha → pause + alert, never touched; resume after user clears it', { 
 
   // Watchdog: browser dies unexpectedly → restart and keep going
   const before = c.status.counts.videos;
-  await c.browser.ctx.close();
+  const { killProfileProcesses } = await import('../src/browser/edge.ts');
+  await killProfileProcesses(c.browser.profileDir()); // simulate an Edge crash
   await waitFor(() => c.browser.restarts >= 1 && c.status.counts.videos > before && c.status.state === 'running', 90_000, 'recover after crash');
   c.stop();
   await waitFor(() => c.status.state === 'idle', 30_000, 'stop');

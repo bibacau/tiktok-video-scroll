@@ -46,6 +46,38 @@ export class TikTok {
   async open(src: Source, signal?: AbortSignal): Promise<Inspection> {
     const url = sourceUrl(src);
     await this.browser.guarded(page => page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 }), `open ${url}`, 60_000);
+    return this.afterOpen(src, signal);
+  }
+
+  /**
+   * Type a search into TikTok's own search bar like a person: click the box, type character by
+   * character with small random pauses, press Enter. Falls back to the search URL only if no box is found.
+   */
+  async searchTyped(query: string, signal?: AbortSignal): Promise<{ method: 'typed' | 'url'; inspection: Inspection }> {
+    const sel = selectors();
+    const findBox = async (page: Page) => {
+      for (const s of sel.searchInput) { const l = page.locator(s).first(); if (await l.isVisible().catch(() => false)) return l; }
+      return null;
+    };
+    const typed = await this.browser.guarded(async page => {
+      let box = await findBox(page);
+      if (!box) { await runScript(page, 'clickFirst', sel.searchOpen); await sleep(800, signal); box = await findBox(page); }
+      if (!box) return false;
+      await box.click();
+      await sleep(250 + Math.random() * 400, signal);
+      await page.keyboard.press('Control+A'); await page.keyboard.press('Delete');
+      for (const ch of query) { await page.keyboard.type(ch); await sleep(60 + Math.random() * 160, signal); }
+      await sleep(300 + Math.random() * 500, signal);
+      await page.keyboard.press('Enter');
+      return true;
+    }, 'type search', 90_000);
+    if (!typed) return { method: 'url', inspection: await this.open({ kind: 'search', value: query }, signal) };
+    await sleep(1500, signal);
+    return { method: 'typed', inspection: await this.afterOpen({ kind: 'search', value: query }, signal) };
+  }
+
+  /** Wait for a playing video or a grid of results (opening the first result). */
+  private async afterOpen(src: Source, signal?: AbortSignal): Promise<Inspection> {
     // Wait for a playing video or a grid of results.
     let last: Inspection | null = null;
     for (let i = 0; i < 20; i++) {

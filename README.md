@@ -105,6 +105,8 @@ For each video:
 4. **If watching:** it stays longer (more interest means longer, up to your max), samples more frames, and optionally takes a **second AI look**. That extracts topic, hook, format, sound and reason, plus a score. Videos scoring above your threshold are saved with the fields you ticked.
 5. **Interests** are updated from what was actually watched.
 
+**AI-chosen search (off by default):** *Watch → Sources → Let the AI choose what to search*. Based on your Watch instructions, learned interests and what it just saw, the AI may decide to search instead of scrolling on. The query (max 60 characters) is checked against your exclude words, the creation banned words, the block-list and the optional allow-list. It is then **typed into TikTok's search bar character by character** with small random pauses and Enter, just like a person. Only if no search box is found does it open the search link instead. There's a daily limit. The Status page shows the current query, and *History → AI searches* lists every search with its reason (including rejected ones and why). The search-box selectors are in *Settings → TikTok page selectors* (`searchInput`, `searchOpen`).
+
 **About images:** if the [vision helper](#image-understanding-vision-helper) is on, it describes the frames first. Otherwise the app tries sending the images to the main model. If the model refuses them (DeepSeek does), it notices once and switches to text only for that model. Each decision shows which way it went: 🖼 images, 👁 vision helper, or 📝 text only (Status and History pages). Model IDs aren't hard-coded: press **Load models** to see what your key offers, and type any model ID.
 
 ## Image understanding (vision helper)

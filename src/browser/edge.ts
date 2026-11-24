@@ -53,11 +53,17 @@ function userDataDirOf(cmd: string): string | null {
 
 /** Kill only the processes that use THIS profile folder (never your normal Edge). */
 export async function killProfileProcesses(dir: string): Promise<number> {
-  const pids = await profileProcesses(dir);
-  for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
-  if (process.platform === 'win32' && pids.length) await run('taskkill.exe', ['/F', '/T', ...pids.flatMap(p => ['/PID', String(p)])]);
+  // Repeat: a browser that is still starting can spawn new helper processes after the first pass.
+  const killed = new Set<number>();
+  for (let round = 0; round < 12; round++) {
+    const pids = await profileProcesses(dir);
+    if (!pids.length) break;
+    for (const pid of pids) { killed.add(pid); try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+    if (process.platform === 'win32') await run('taskkill.exe', ['/F', '/T', ...pids.flatMap(p => ['/PID', String(p)])]);
+    await new Promise(r => setTimeout(r, 300));
+  }
   try { fs.rmSync(path.join(dir, 'DevToolsActivePort'), { force: true }); } catch { /* */ }
-  return pids.length;
+  return killed.size;
 }
 
 export function findBrowserExecutable(): string {

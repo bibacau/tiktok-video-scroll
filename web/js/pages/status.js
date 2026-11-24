@@ -67,6 +67,7 @@ export function StatusPage() {
       <section class="card">
         <h3>Now</h3>
         ${s.source ? html`<p class="muted">Source: ${s.source}</p>` : null}
+        ${s.search ? html`<div class="searchnow">🔎 AI search: <b>"${s.search.query}"</b><div class="small muted">${s.search.reason}</div></div>` : null}
         ${s.current ? html`<div class="current">
           <div><span class=${`pill small ${s.current.phase}`}>${s.current.phase}</span> <strong>@${s.current.author || '?'}</strong>
           ${s.current.duration ? html` <span class="muted">${Math.round(s.current.duration)}s</span>` : null}</div>

@@ -13,6 +13,7 @@ import { rand, sleep, zoned } from '../time.ts';
 import { storyboard, type Frame } from './storyboard/index.ts';
 import { interestsForPrompt, updateInterests } from './memory.ts';
 import { engage } from './engage.ts';
+import { aiSearchAvailable, recordSearch, searchOption, validateQuery } from './search.ts';
 
 export class GuardHit extends Error { kind: string; constructor(kind: string, detail: string) { super(detail); this.kind = kind; } }
 export class SessionOver extends Error {}
@@ -97,7 +98,7 @@ export async function runSession(host: SessionHost): Promise<Counters> {
       if (!source || leftOnSource <= 0) {
         source = pickSource(watch);
         leftOnSource = watch.sources.videosPerSource;
-        host.update({ source: sourceLabel(source), thinking: `Opening ${sourceLabel(source)}…`, current: null });
+        host.update({ source: sourceLabel(source), thinking: `Opening ${sourceLabel(source)}…`, current: null, search: null });
         log('info', 'watch', `Opening ${sourceLabel(source)}`);
         const ins = await tiktok.open(source, signal);
         if (await checkGuard(ins)) continue;
@@ -111,8 +112,19 @@ export async function runSession(host: SessionHost): Promise<Counters> {
         continue;
       }
       noProgress = 0;
-      await handleVideo(host, ins.video, source, c, delay, checkGuard);
+      const outcome = await handleVideo(host, ins.video, source, c, delay, checkGuard);
       leftOnSource--;
+      if (outcome?.search) {
+        const { query, reason } = outcome.search;
+        await host.gate();
+        host.update({ search: { query, reason, at: new Date().toISOString() }, source: `AI search "${query}"`, thinking: `🔎 Searching "${query}" — ${reason}`, current: null });
+        const r = await tiktok.searchTyped(query, signal);
+        recordSearch(host.sessionId, query, reason, 'done', r.method);
+        source = { kind: 'search', value: query };
+        leftOnSource = watch.sources.videosPerSource;
+        if (await checkGuard(r.inspection)) continue;
+        continue;
+      }
       failures = 0;
       await host.gate();
       if (host.remaining() <= 0) break;
@@ -138,7 +150,7 @@ export async function runSession(host: SessionHost): Promise<Counters> {
 }
 
 async function handleVideo(host: SessionHost, v: VideoInfo, source: Source, c: Counters, delay: () => Promise<void>,
-  checkGuard: (i: Inspection) => Promise<boolean>) {
+  checkGuard: (i: Inspection) => Promise<boolean>): Promise<{ search?: { query: string; reason: string } } | void> {
   const { tiktok, signal } = host;
   const watch = host.preset.data.watch, save = host.preset.data.save, b = watch.behaviour;
   const started = Date.now();
@@ -179,9 +191,13 @@ async function handleVideo(host: SessionHost, v: VideoInfo, source: Source, c: C
     persona: mem.persona, interests: interestsForPrompt(), instructions: watch.instructions, strictness: b.strictness,
     languages: watch.filters.languages.join(', ') || 'any', video: videoText(v, source),
     frames_note: sb ? `Frames: ${sb.note}` : 'No frames could be captured.',
+    search_option: searchOption(watch),
   };
+  let system = render(getPrompt('watch_decide'), decideVars);
+  // An edited prompt without {{search_option}} still gets the option while AI search is on.
+  if (decideVars.search_option && !system.includes(decideVars.search_option)) system += `\n\n${decideVars.search_option}\nTo search, reply with "action": "search" and "query".`;
   const decided = await chatJson({
-    step: 'watch', signal, system: render(getPrompt('watch_decide'), decideVars),
+    step: 'watch', signal, system,
     images: sb ? [{ mime: 'image/jpeg', base64: sb.jpeg.toString('base64') }] : [],
   });
   const decision = decided.json ?? {};
@@ -191,6 +207,18 @@ async function handleVideo(host: SessionHost, v: VideoInfo, source: Source, c: C
   const threshold = b.strictness * 10;
   let action: 'watch' | 'skip' = decision.action === 'watch' && interest >= threshold - 10 ? 'watch' : 'skip';
   if ((watch.filters.skipAds && decision.is_ad === true) || (watch.filters.skipLive && decision.is_live === true)) action = 'skip';
+  // AI-chosen search (only when enabled and within today's limit)
+  if (decision.action === 'search') {
+    const q = validateQuery(decision.query, watch, host.preset.data.create?.script?.bannedWords ?? []);
+    if (q.ok && aiSearchAvailable(watch)) {
+      c.skipped++;
+      updateInterests(decision.topics, 0, 'skip');
+      record(host, v, source, { decision: 'skip', interest, reason: `Wants to search "${q.query}": ${decision.reason ?? ''}`, watched: (Date.now() - started) / 1000, data: { decide: decision, frames: frameInfo } });
+      host.update({ counts: { ...c } });
+      return { search: { query: q.query, reason: String(decision.reason ?? '') } };
+    }
+    recordSearch(host.sessionId, String(decision.query ?? ''), String(decision.reason ?? ''), 'rejected', null, q.ok ? 'daily AI-search limit reached or AI search is off' : q.why);
+  }
   host.update({ thinking: `${action === 'watch' ? '👀 Watching' : '⏭ Skipping'} (interest ${interest}): ${decision.reason ?? ''}`, current: { ...current, phase: action === 'watch' ? 'watching' : 'skipping' } });
 
   if (action === 'skip') {

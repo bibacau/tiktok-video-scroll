@@ -6,7 +6,7 @@ import { paths } from '../paths.ts';
 /** Every prompt the app sends. Default text lives in src/prompts/<key>.md; edits are stored in the DB. */
 export const PROMPTS: Array<{ key: string; title: string; step: string; variables: string[] }> = [
   { key: 'watch_decide', title: 'Watch: watch or skip?', step: 'watch',
-    variables: ['persona', 'interests', 'instructions', 'strictness', 'languages', 'video', 'frames_note'] },
+    variables: ['persona', 'interests', 'instructions', 'strictness', 'languages', 'video', 'frames_note', 'search_option'] },
   { key: 'watch_analyze', title: 'Watch: second look & what to save', step: 'analyze',
     variables: ['persona', 'instructions', 'fields', 'video', 'first_decision', 'frames_note'] },
   { key: 'vision_describe', title: 'Vision helper: describe frames', step: 'vision', variables: [] },

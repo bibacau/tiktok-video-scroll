@@ -46,17 +46,21 @@ const PAGE = (captchaAfter: number, loops: number) => `<!doctype html><html><hea
 .item{height:100vh;scroll-snap-align:start;display:flex;gap:20px;align-items:center;justify-content:center;border-bottom:1px solid #ccc}
 video{height:85vh;aspect-ratio:9/16;background:#000} .side{width:300px}
 #captcha-verify-container{position:fixed;inset:30% 35%;background:#fff;border:3px solid red;z-index:9;padding:20px}</style></head>
-<body><div class="feed" id="feed">${Array.from({ length: loops }, () => VIDEOS).flat().map(item).join('')}</div>
+<body><input data-e2e="search-user-input" id="sq" placeholder="Search" style="position:fixed;top:4px;left:4px;z-index:5;width:200px">
+<div class="feed" id="feed">${Array.from({ length: loops }, () => VIDEOS).flat().map(item).join('')}</div>
 <script>
 const feed = document.getElementById('feed'); let idx = 0, moves = 0; const items = [...document.querySelectorAll('.item')];
 function show(i){ idx = Math.max(0, Math.min(items.length-1, i)); items[idx].scrollIntoView(); document.querySelectorAll('video').forEach((v,j)=>{ if(j===idx){v.play().catch(()=>{})} else v.pause(); }); }
-document.addEventListener('keydown', e => { if (e.key === 'ArrowDown') { moves++; show(idx+1); if (${captchaAfter} > 0 && moves === ${captchaAfter}) { const c = document.createElement('div'); c.id='captcha-verify-container'; c.textContent='Drag the slider'; document.body.appendChild(c); } } if (e.key === 'ArrowUp') show(idx-1); });
+let keys = 0;
+sq.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') location.href = '/search/video?q=' + encodeURIComponent(sq.value) + '&keys=' + keys; else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) keys++; });
+document.addEventListener('keydown', e => { if (document.activeElement === sq) return; if (e.key === 'ArrowDown') { moves++; show(idx+1); if (${captchaAfter} > 0 && moves === ${captchaAfter}) { const c = document.createElement('div'); c.id='captcha-verify-container'; c.textContent='Drag the slider'; document.body.appendChild(c); } } if (e.key === 'ArrowUp') show(idx-1); });
 setTimeout(() => show(0), 300);
 </script></body></html>`;
 
 export const engaged: Array<{ kind: string; id: string }> = [];
+export const searchesSeen: Array<{ q: string; keys: number }> = [];
 export const commentsPosted: Array<{ video: string; text: string }> = [];
-export function startFakeTikTok(port = 0, opts: { captchaAfter?: number } = {}): Promise<{ url: string; close: () => void }> {
+export function startFakeTikTok(port = 0, opts: { captchaAfter?: number; noSearchBox?: boolean } = {}): Promise<{ url: string; close: () => void }> {
   let pageLoads = 0;
   const server = http.createServer(async (req, res) => {
     const u = new URL(req.url!, 'http://x');
@@ -70,6 +74,12 @@ export function startFakeTikTok(port = 0, opts: { captchaAfter?: number } = {}):
       } else { res.writeHead(200, { 'content-type': 'video/webm', 'content-length': stat.size, 'accept-ranges': 'bytes' }); fs.createReadStream(f).pipe(res); }
       return;
     }
+    if (u.pathname === '/search/video') {
+      searchesSeen.push({ q: u.searchParams.get('q') ?? '', keys: Number(u.searchParams.get('keys') ?? -1) });
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(`<!doctype html><body><h1>Results</h1>${VIDEOS.slice(0, 4).map(v => `<div data-e2e="search_video-item" style="width:200px;height:300px;display:inline-block"><a href="/@${v.user}/video/${v.id}">${v.caption}</a></div>`).join('')}</body>`);
+      return;
+    }
     if (u.pathname === '/engage') { engaged.push({ kind: u.searchParams.get('kind')!, id: u.searchParams.get('id')! }); res.end('ok'); return; }
     const vid = u.pathname.match(/^\/@[^/]+\/video\/(\d+)$/);
     if (vid && req.method === 'POST') { let b = ''; for await (const c of req) b += c; commentsPosted.push({ video: vid[1], text: b }); res.end('ok'); return; }
@@ -81,7 +91,8 @@ export function startFakeTikTok(port = 0, opts: { captchaAfter?: number } = {}):
       return;
     }
     if (u.pathname === '/foryou' || u.pathname === '/') {
-      res.writeHead(200, { 'content-type': 'text/html' }); res.end(PAGE(pageLoads++ === 0 ? opts.captchaAfter ?? 0 : 0, 4)); return;
+      const html = PAGE(pageLoads++ === 0 ? opts.captchaAfter ?? 0 : 0, 4);
+      res.writeHead(200, { 'content-type': 'text/html' }); res.end(opts.noSearchBox ? html.replace(/<input data-e2e="search-user-input"[^>]*>/, '').replace(/let keys = 0;[\s\S]*?\+ keys; else if[^\n]*\n/, '') : html); return;
     }
     res.writeHead(404); res.end('not found');
   });
@@ -122,7 +133,10 @@ export function startMockLlm(port = 0): Promise<{ url: string; stats: MockStats;
     stats.lastUserText = typeof user === 'string' ? user : JSON.stringify(user);
     const sys: string = j.messages?.[0]?.content ?? '';
     let out: any;
-    if (sys.includes('Decide if this video')) {
+    if (sys.includes('You may ALSO choose "action": "search"') && !stats.byKind.search) {
+      stats.byKind.search = 1;
+      out = { action: 'search', query: 'resepi kuih raya mudah', reason: 'The feed is drifting off topic; looking for easy kuih recipes', interest: 10, topics: [] };
+    } else if (sys.includes('Decide if this video')) {
       stats.byKind.decide = (stats.byKind.decide ?? 0) + 1;
       const recipe = /Caption: [^\n]*recipe/i.test(sys);
       out = { action: recipe ? 'watch' : 'skip', interest: recipe ? 85 : 20, reason: recipe ? 'A Malaysian recipe, on topic' : 'Off topic', is_ad: false, is_live: false, language: 'English', topics: [{ topic: recipe ? 'malaysian recipes' : 'other', signal: recipe ? 'like' : 'dislike' }] };

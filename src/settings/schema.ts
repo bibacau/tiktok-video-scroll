@@ -16,6 +16,12 @@ export const watchSchema = s.group('Watching', {
     keywords: s.list('Search keywords', [], { placeholder: 'nasi lemak recipe' }),
     hashtags: s.list('Hashtags (without #)', [], { placeholder: 'malaysianfood' }),
     creators: s.list('Creators (without @)', [], { placeholder: 'username' }),
+    aiSearch: s.group('Let the AI choose what to search', {
+      enabled: s.bool('Let the AI choose what to search', false, { help: 'Based on your Watch instructions, learned interests and what it just saw, the AI may type a search into TikTok\'s search bar.' }),
+      dailyLimit: s.number('Max AI searches per day', 10, 0, 200),
+      allowTopics: s.list('Only search about these topics (optional)', [], { placeholder: 'kuih', help: 'If set, every AI search must contain one of these words.' }),
+      blockList: s.list('Never search for', [], { placeholder: 'politics' }),
+    }),
     videosPerSource: s.number('Videos before switching source', 8, 1, 200),
   }),
   filters: s.group('Filters', {
@@ -218,6 +224,8 @@ export const DEFAULT_SELECTORS = {
   adTexts: ['Sponsored', 'Ad', 'Promoted', 'Ditaja', 'Iklan'],
   liveMarkers: ['[data-e2e="live-tag"]', '[data-e2e="video-live-tag"]', 'a[href*="/live"]'],
   liveTexts: ['LIVE'],
+  searchOpen: ['[data-e2e="nav-search"]', 'button[aria-label="Search" i]', 'div[data-e2e="search-icon"]'],
+  searchInput: ['input[data-e2e="search-user-input"]', 'input[type="search"]', 'input[name="q"]', 'input[placeholder*="Search" i]', 'input[placeholder*="Cari" i]'],
   captcha: ['#captcha-verify-container', '#captcha_container', '.captcha_verify_container', '[class*="captcha-verify" i]', 'iframe[src*="captcha"]', '[id*="secsdk-captcha" i]'],
   captchaTexts: ['Verify to continue', 'Drag the slider', 'Select 2 objects', 'Sahkan untuk teruskan'],
   loginModal: ['[data-e2e="login-modal"]', '#loginContainer', '[data-e2e="login-title"]'],

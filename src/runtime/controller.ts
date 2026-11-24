@@ -18,14 +18,14 @@ export interface Status {
   state: State; trigger: 'manual' | 'schedule' | null; sessionId: number | null;
   presetId: string | null; presetName: string | null;
   startedAt: string | null; plannedSeconds: number; activeSeconds: number; endsAt: string | null;
-  source: string | null; current: any; thinking: string; counts: { videos: number; watched: number; skipped: number; saved: number };
+  source: string | null; current: any; thinking: string; search: { query: string; reason: string; at: string } | null; counts: { videos: number; watched: number; skipped: number; saved: number };
   alert: { kind: string; message: string; at: string; profile?: string } | null;
   browserOpen: boolean; restarts: number;
 }
 
 const blank = (): Status => ({
   state: 'idle', trigger: null, sessionId: null, presetId: null, presetName: null, startedAt: null, plannedSeconds: 0, activeSeconds: 0, endsAt: null,
-  source: null, current: null, thinking: '', counts: { videos: 0, watched: 0, skipped: 0, saved: 0 }, alert: null, browserOpen: false, restarts: 0,
+  source: null, current: null, thinking: '', search: null, counts: { videos: 0, watched: 0, skipped: 0, saved: 0 }, alert: null, browserOpen: false, restarts: 0,
 });
 
 class Controller extends EventEmitter {

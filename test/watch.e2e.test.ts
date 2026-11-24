@@ -138,3 +138,35 @@ test('engagement: likes/favourites within caps on good videos; comments wait for
   assert.deepEqual(commentsPosted.map(x => x.text), ['Nampak sedap, nak cuba!']);
   assert.equal(m.db.prepare('SELECT status FROM engagements WHERE id = ?').get(pending[0].id).status, 'posted');
 });
+
+test('AI-chosen search: types the query into the search bar character by character, logged, daily limit', { skip: !BROWSER && 'no browser', timeout: 240_000 }, async () => {
+  const { searchesSeen } = await import('./fixture/fake-sites.ts');
+  const p = m.store.listPresets()[0];
+  p.data.engagement.like.enabled = false; p.data.engagement.favourite.enabled = false; p.data.engagement.comment.enabled = false;
+  p.data.watch.sources.aiSearch = { enabled: true, dailyLimit: 1, allowTopics: ['kuih', 'resepi'], blockList: ['dance'] };
+  m.store.updatePreset(p.id, { data: p.data });
+  const c = m.controller;
+  await c.start({ minutes: 0.6 });
+  await waitFor(() => c.status.search?.query === 'resepi kuih raya mudah', 120_000, 'AI search shown on Status');
+  await waitFor(() => c.status.state === 'idle', 150_000, 'session end');
+  assert.equal(searchesSeen.length, 1, 'one search (daily limit 1)');
+  assert.equal(searchesSeen[0].q, 'resepi kuih raya mudah');
+  assert.equal(searchesSeen[0].keys, 'resepi kuih raya mudah'.length, 'typed key by key, not pasted');
+  const rows = m.db.prepare('SELECT * FROM searches').all();
+  assert.equal(rows.filter((r: any) => r.status === 'done').length, 1);
+  assert.equal(rows[0].method, 'typed');
+  assert.match(rows[0].reason, /drifting/);
+});
+
+test('AI search falls back to the search link only when no search box exists', { skip: !BROWSER && 'no browser', timeout: 120_000 }, async () => {
+  const { searchesSeen } = await import('./fixture/fake-sites.ts');
+  tt.close();
+  tt = await startFakeTikTok(0, { noSearchBox: true });
+  const app = m.store.getAppSettings(); app.browser.baseUrl = tt.url; m.store.saveAppSettings(app);
+  const c = m.controller;
+  await c.tiktok.open({ kind: 'foryou' });
+  const r = await c.tiktok.searchTyped('kuih bahulu');
+  assert.equal(r.method, 'url');
+  assert.equal(searchesSeen.at(-1)!.q, 'kuih bahulu');
+  await c.browser.close();
+});

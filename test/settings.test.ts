@@ -36,3 +36,16 @@ test('planner fits sessions in windows with breaks', () => {
   assert.equal(p2.plannedMinutes, 60);
   assert.ok(p2.warnings.length >= 2);
 });
+
+test('AI search queries are validated (length, exclude/banned words, block-list, allow-list)', async () => {
+  const { validateQuery } = await import('../src/watch/search.ts');
+  const watch = coerce(presetSchema, { watch: { filters: { excludeKeywords: ['dance'] }, sources: { aiSearch: { enabled: true, allowTopics: ['kuih', 'nasi'], blockList: ['politik'] } } } }).watch;
+  assert.equal(validateQuery('resepi kuih lapis', watch).ok, true);
+  assert.equal(validateQuery('  "#resepi   kuih"  ', watch).query, 'resepi kuih');
+  assert.match(validateQuery('x'.repeat(61) + ' kuih', watch).why!, /60/);
+  assert.match(validateQuery('kuih dance challenge', watch).why!, /dance/);
+  assert.match(validateQuery('nasi politik', watch).why!, /politik/);
+  assert.match(validateQuery('kuih babi', watch, ['babi']).why!, /babi/);
+  assert.match(validateQuery('laksa johor', watch).why!, /allowed topic/);
+  assert.match(validateQuery('https://x.com kuih', watch).why!, /link/);
+});

@@ -15,6 +15,7 @@ import { addAccount, getAccount, listAccounts, removeAccount, updateAccount } fr
 import { nextSlot, postSettingsFor, poster } from '../post/poster.ts';
 import { analyticsAt, latestMetrics, performanceSummary } from '../post/analytics.ts';
 import { engagementStats, listComments } from '../watch/engage.ts';
+import { listSearches } from '../watch/search.ts';
 import { EDGE_VOICES } from '../settings/schema.ts';
 import { paths } from '../paths.ts';
 import { getDb } from '../db.ts';
@@ -183,6 +184,7 @@ export async function buildServer(): Promise<FastifyInstance> {
     return (getDb().prepare('SELECT * FROM events ORDER BY id DESC LIMIT ?').all(limit) as any[]).map(e => ({ ...e, data: e.data ? JSON.parse(e.data) : null }));
   });
   app.get('/api/budget', async () => budgetSummary());
+  app.get('/api/history/searches', async () => listSearches());
 
   app.get('/api/info', async () => ({
     version: '0.1.0', lan: Object.values(os.networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i!.address),

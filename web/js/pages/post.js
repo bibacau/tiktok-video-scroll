@@ -94,6 +94,7 @@ function Queue() {
     <div class="ccards">${q.waiting.map(c => html`<${WaitingCard} key=${c.id} c=${c} accounts=${accounts} reload=${load} />`)}</div>
     <${Comments} list=${q.comments} reload=${load} />
     <${PendingShares} />
+    <${PendingMessages} />
     ${q.scheduled.length ? html`<section class="card"><h3>Scheduled & in progress</h3>${q.scheduled.map(c => html`<${Row} c=${c} reload=${load} accounts=${accounts} />`)}</section>` : null}
     ${q.failed.length ? html`<section class="card"><h3>Failed</h3>${q.failed.map(c => html`<${Row} c=${c} reload=${load} accounts=${accounts} />`)}</section>` : null}
     ${q.posted.length ? html`<section class="card"><h3>Posted</h3>${q.posted.map(c => html`<${Row} c=${c} reload=${load} accounts=${accounts} />`)}</section>` : null}
@@ -166,4 +167,22 @@ function PendingShares() {
       <button class="btn small primary" onClick=${guard(async () => { const r = await post(`/api/shares/${s.id}/approve`); toast(`Approved — sends ${r.willSend}`); load(); })}>Approve</button>
       <button class="btn small ghost" onClick=${guard(async () => { await post(`/api/shares/${s.id}/reject`); load(); })}>Reject</button></div>`)}
   </section>`;
+}
+
+function PendingMessages() {
+  const [rows, setRows] = useState([]);
+  const load = () => get('/api/messages').then(r => setRows(r.messages.filter(m => m.status === 'pending'))).catch(() => {});
+  useEffect(load, []);
+  if (!rows.length) return null;
+  return html`<section class="card"><h3>✉️ Messages waiting for your approval</h3>
+    <p class="help">Replies drafted by the AI to private messages. Edit if you like, then approve — it's typed and sent in the account's Edge window.</p>
+    ${rows.map(m => html`<${MsgRow} key=${m.id} m=${m} reload=${load} />`)}</section>`;
+}
+function MsgRow({ m, reload }) {
+  const [text, setText] = useState(m.reply || '');
+  return html`<div class="vrow"><div class="grow">
+    <div class="small"><b>@${m.conversation}</b> wrote:</div><div class="quote">${m.incoming}</div>
+    <textarea rows="2" value=${text} onInput=${e => setText(e.target.value)} /></div>
+    <button class="btn small primary" onClick=${guard(async () => { const r = await post(`/api/messages/${m.id}/approve`, { text }); toast(`Approved — sends ${r.willSend}`); reload(); })}>Approve</button>
+    <button class="btn small ghost" onClick=${guard(async () => { await post(`/api/messages/${m.id}/reject`); reload(); })}>Reject</button></div>`;
 }

@@ -307,3 +307,45 @@ function shareSelect(arg) {
   }
   return { found: false };
 }
+
+// ------------------------------------------------------------------ Messages (private chats)
+
+/** Conversations in the left list: name, username (if a profile link is inside), unread flag. */
+function msgList(sel) {
+  const vis = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  let items = [];
+  for (const s of sel.msgConversation) { try { items = [...document.querySelectorAll(s)].filter(vis); } catch (e) { items = []; } if (items.length) break; }
+  const q = (root, list) => { for (const s of list) { try { const el = root.querySelector(s); if (el && (el.textContent || '').trim()) return el; } catch (e) { /* invalid */ } } return null; };
+  const has = (root, list) => list.some(s => { try { return [...root.querySelectorAll(s)].some(vis); } catch (e) { return false; } });
+  return items.map((el, index) => {
+    const link = el.querySelector('a[href*="/@"]');
+    const username = link ? (link.getAttribute('href').match(/@([^/?#]+)/) || [])[1] || null : (el.getAttribute('data-username') || null);
+    const nameEl = q(el, sel.msgConversationName);
+    return { index, username, name: ((nameEl || el).textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80), unread: has(el, sel.msgUnread) };
+  });
+}
+
+/** Click conversation number `arg.index` in the list. */
+function msgOpen(arg) {
+  let items = [];
+  for (const s of arg.sel.msgConversation) { try { items = [...document.querySelectorAll(s)].filter(e => e.getBoundingClientRect().height > 0); } catch (e) { items = []; } if (items.length) break; }
+  const el = items[arg.index];
+  if (!el) return false;
+  el.scrollIntoView({ block: 'center' });
+  el.click();
+  return true;
+}
+
+/** The open chat: who it is with and its messages (mine / theirs), oldest first. */
+function msgChat(sel) {
+  const vis = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  let header = null;
+  for (const s of sel.msgHeaderLink) { try { header = [...document.querySelectorAll(s)].find(vis); } catch (e) { header = null; } if (header) break; }
+  const href = header && (header.getAttribute('href') || '');
+  const username = href ? ((href.match(/@([^/?#]+)/) || [])[1] || null) : header ? (header.textContent || '').replace(/^@/, '').trim() : null;
+  let items = [];
+  for (const s of sel.msgItem) { try { items = [...document.querySelectorAll(s)].filter(vis); } catch (e) { items = []; } if (items.length) break; }
+  const isMine = el => sel.msgMine.some(s => { try { return el.matches(s) || !!el.querySelector(s) || !!el.closest(s); } catch (e) { return false; } });
+  const textOf = el => { for (const s of sel.msgText) { try { const t = el.querySelector(s); if (t && t.textContent.trim()) return t.textContent.replace(/\s+/g, ' ').trim(); } catch (e) { /* invalid */ } } return (el.textContent || '').replace(/\s+/g, ' ').trim(); };
+  return { username, messages: items.map(el => ({ mine: isMine(el), text: textOf(el).slice(0, 2000) })).filter(m => m.text) };
+}

@@ -68,6 +68,7 @@ test('old data folder: database, settings, API keys and Edge profiles survive th
   assert.equal(p.data.save.picksCount, 9, 'old save values kept next to the new share settings');
   assert.equal(p.data.save.share.to, 'bibacau');
   assert.equal(p.data.watch.sources.aiSearch.enabled, false);
+  assert.equal(p.data.engagement.messages.enabled, false, 'private-message replies stay off after updating');
   assert.equal(store.listPresets().length, 1, 'no Default preset added on top');
   const app = store.getAppSettings();
   assert.equal(app.general.currencyRate, 4.5);
@@ -81,7 +82,7 @@ test('old data folder: database, settings, API keys and Edge profiles survive th
   assert.equal(fs.statSync(dbFile).ino, inode, 'same database file');
   const cols = (t: string) => (db.prepare(`PRAGMA table_info(${t})`).all() as any[]).map(c => c.name);
   assert.ok(cols('creations').includes('post_at') && cols('usage').includes('ref'));
-  for (const t of ['accounts', 'metrics', 'engagements', 'searches', 'shares']) assert.ok(cols(t).length, `${t} table added`);
+  for (const t of ['accounts', 'metrics', 'engagements', 'searches', 'shares', 'messages']) assert.ok(cols(t).length, `${t} table added`);
   assert.equal((db.prepare('SELECT title FROM creations').get() as any).title, 'Old video');
   assert.equal((db.prepare('SELECT cost_rm FROM usage').get() as any).cost_rm, 1.25);
   assert.equal((db.prepare('SELECT COUNT(*) n FROM videos').get() as any).n, 1);

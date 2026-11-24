@@ -62,6 +62,23 @@ if (__AUTO_ADVANCE__ > 0) { let lastIdx = -1, since = Date.now(); setInterval(()
 export const engaged: Array<{ kind: string; id: string }> = [];
 export const searchesSeen: Array<{ q: string; keys: number }> = [];
 export const sharesSeen: Array<{ id: string; to: string }> = [];
+/** Fake TikTok Messages inbox. */
+export const inbox: { convs: Array<{ user: string; name: string; unread: boolean; messages: Array<{ mine: boolean; text: string }> }> } = { convs: [] };
+export const dmSent: Array<{ to: string; text: string; keys: number }> = [];
+const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function messagesPage(current: string | null) {
+  const c = inbox.convs.find(x => x.user === current);
+  if (c) c.unread = false;
+  return `<!doctype html><html><head><meta charset="utf-8"></head><body>
+  <div id="list" data-e2e="chat-list">${inbox.convs.map(x => `<div data-e2e="chat-list-item" style="padding:6px;cursor:pointer" onclick="location.href='/messages?c=${x.user}'"><p data-e2e="chat-list-item-name">${escHtml(x.name)}</p>${x.unread ? '<span data-e2e="chat-list-item-unread">1</span>' : ''}</div>`).join('')}</div>
+  ${c ? `<div id="chat"><div data-e2e="chat-header"><a href="/@${c.user}">${escHtml(c.name)}</a></div>
+    ${c.messages.map(m => `<div data-e2e="chat-item">${m.mine ? '<span data-e2e="chat-item-mine"></span>' : ''}<p data-e2e="chat-item-text">${escHtml(m.text)}</p></div>`).join('')}
+    <div data-e2e="message-input-area"><div contenteditable="true" id="mi" style="min-height:30px;border:1px solid #999"></div></div>
+    <button data-e2e="message-send" id="ms">Send</button></div>
+  <script>let keys = 0; mi.addEventListener('keydown', e => { if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) keys++; });
+    ms.onclick = () => fetch('/dm?to=${c.user}&keys=' + keys, { method: 'POST', body: mi.innerText }).then(() => location.reload());</script>` : ''}
+  </body></html>`;
+}
 /** Share panel like TikTok's: Share → Send to → recent contact list (1 shown) + search box → Send. */
 export const shareOpts = { recipients: ['kawan1', 'bibacau', 'kawan2'], notMutual: false };
 const SHARE_UI = () => `
@@ -116,6 +133,14 @@ export function startFakeTikTok(port = 0, opts: { captchaAfter?: number; noSearc
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(`<!doctype html><body><h1>Results</h1>${VIDEOS.slice(0, 4).map(v => `<div data-e2e="search_video-item" style="width:200px;height:300px;display:inline-block"><a href="/@${v.user}/video/${v.id}">${v.caption}</a></div>`).join('')}</body>`);
       return;
+    }
+    if (u.pathname === '/messages') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(messagesPage(u.searchParams.get('c'))); return; }
+    if (u.pathname === '/dm' && req.method === 'POST') {
+      let b = ''; for await (const x of req) b += x;
+      const to = u.searchParams.get('to')!;
+      dmSent.push({ to, text: b, keys: Number(u.searchParams.get('keys')) });
+      inbox.convs.find(x => x.user === to)?.messages.push({ mine: true, text: b });
+      res.end('ok'); return;
     }
     if (u.pathname === '/share') { sharesSeen.push({ id: u.searchParams.get('id')!, to: u.searchParams.get('to')! }); res.end('ok'); return; }
     if (u.pathname === '/engage') { engaged.push({ kind: u.searchParams.get('kind')!, id: u.searchParams.get('id')! }); res.end('ok'); return; }
@@ -205,6 +230,10 @@ export function startMockLlm(port = 0): Promise<{ url: string; stats: MockStats;
     } else if (sys.includes('Write ONE short TikTok comment')) {
       stats.byKind.comment = (stats.byKind.comment ?? 0) + 1;
       out = { comment: 'Nampak sedap! Nak cuba resepi ni hujung minggu 😋' };
+    } else if (sys.includes('Reply to this private TikTok message')) {
+      stats.byKind.dm = (stats.byKind.dm ?? 0) + 1;
+      out = sys.includes('LINKTEST') ? { reply: 'Tengok sini https://example.com/resepi', flag: 'none', reason: 'share link' }
+        : { reply: 'Terima kasih! Nanti saya kongsi resepi baru 😊', flag: 'none', reason: 'friendly reply' };
     } else if (sys.includes("Today's picks")) {
       stats.byKind.picks = (stats.byKind.picks ?? 0) + 1;
       const ids = [...sys.matchAll(/"id": (\d+)/g)].map(m => Number(m[1]));

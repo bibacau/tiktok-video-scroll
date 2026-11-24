@@ -16,6 +16,7 @@ export const PROMPTS: Array<{ key: string; title: string; step: string; variable
     variables: ['instructions', 'idea', 'research', 'language', 'tone', 'audience', 'length', 'scenes', 'scene_seconds', 'hook_style', 'structure', 'cta', 'voice', 'banned_words', 'banned_topics', 'caption_rules', 'hashtag_count'] },
   { key: 'create_image', title: 'Create: AI image / video prompt', step: 'image', variables: ['scene', 'style'] },
   { key: 'engage_comment', title: 'Engage: draft a comment (always needs your approval)', step: 'analyze', variables: ['style', 'languages', 'video'] },
+  { key: 'message_reply', title: 'Messages: draft a reply to a private message', step: 'analyze', variables: ['persona', 'style', 'username', 'history', 'incoming'] },
   { key: 'picks', title: "Today's picks", step: 'picks',
     variables: ['persona', 'criteria', 'count', 'candidates', 'instructions'] },
 ];

@@ -84,3 +84,15 @@ export function ShareTest() {
     </div>` : null}
   </section>`;
 }
+
+/** Engage → Private messages: check now + last result. */
+export function InboxPanel() {
+  const [busy, setBusy] = useState(false);
+  const [r, setR] = useState(null);
+  const run = async () => { setBusy(true); try { setR(await post('/api/messages/check')); } catch (e) { toast(e.message, 'err'); } finally { setBusy(false); } };
+  return html`<section class="card"><h3>💬 Private messages</h3>
+    <p class="help">Checks unread chats now (normally every few minutes while the app runs, and after each watching session). Drafts wait in Post → Queue when approval is on. Everything read and sent is in History → Messages.</p>
+    <button class="btn" disabled=${busy} onClick=${run}>${busy ? 'Checking… (watch the Edge window)' : 'Check inbox now'}</button>
+    ${r ? html`<p class=${r.error ? 'warn' : 'small'}>${r.error ?? r.skipped ?? `${r.conversations} unread chat(s) · ${r.replied + (r.sentApproved || 0)} replied · ${r.pending} waiting for approval · ${r.ignored} ignored · ${r.flagged} flagged for you`}</p>` : null}
+  </section>`;
+}

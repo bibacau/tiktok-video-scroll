@@ -32,10 +32,12 @@ export function HistoryPage() {
     <div class="subtabs"><button class=${tab === 'sessions' ? 'on' : ''} onClick=${() => setTab('sessions')}>Sessions</button>
       <button class=${tab === 'searches' ? 'on' : ''} onClick=${() => setTab('searches')}>AI searches</button>
       <button class=${tab === 'shares' ? 'on' : ''} onClick=${() => setTab('shares')}>Shares</button>
+      <button class=${tab === 'messages' ? 'on' : ''} onClick=${() => setTab('messages')}>Messages</button>
       <button class=${tab === 'events' ? 'on' : ''} onClick=${() => setTab('events')}>Event log</button></div>
     ${tab === 'searches' ? html`<${Searches} />` : null}
     ${tab === 'shares' ? html`<${Shares} />` : null}
-    ${tab === 'searches' || tab === 'shares' ? null : tab === 'sessions' ? html`<div>
+    ${tab === 'messages' ? html`<${Messages} />` : null}
+    ${tab === 'searches' || tab === 'shares' || tab === 'messages' ? null : tab === 'sessions' ? html`<div>
       ${!sessions.length ? html`<p class="pad muted">No sessions yet.</p>` : null}
       ${sessions.map(s => html`<section class="card">
         <header class="group-head" onClick=${() => setOpen(open === s.id ? null : s.id)}>
@@ -76,4 +78,17 @@ function Shares() {
       ${s.telegram ? html`<span class="muted small">Telegram: ${s.telegram}</span>` : null}
       ${['failed', 'skipped', 'blocked', 'needs_user'].includes(s.status) && s.video_url ? html`<button class="btn small ghost" onClick=${() => retry(s.id)}>Retry</button>` : null}
       ${s.error ? html`<div class=${`small ${s.status === 'skipped' ? 'muted' : 'warn'}`}>${s.error}</div>` : null}</div>`)}</section>`;
+}
+
+function Messages() {
+  const [d, setD] = useState(null);
+  useEffect(() => { get('/api/messages').then(setD).catch(e => toast(e.message, 'err')); }, []);
+  if (!d) return html`<p class="pad muted">Loading…</p>`;
+  if (!d.messages.length) return html`<p class="pad muted">No private messages handled yet. Turn it on in Engage → Private messages.</p>`;
+  return html`<section class="card">${d.messages.map(m => html`<div class="vrow">
+    <span class=${`pill small ${m.status === 'sent' ? 'done' : ['pending', 'approved', 'sending'].includes(m.status) ? 'pending' : ['flagged', 'failed'].includes(m.status) ? 'missed' : 'skip'}`}>${m.status}</span>
+    <span class="small">${fmtTime(m.at)}</span><b>@${m.conversation}</b><span class="muted small">${m.account === 'watcher' ? 'watcher inbox' : 'posting account'}</span>
+    <div class="why"><span class="muted small">They:</span> ${m.incoming}</div>
+    ${m.reply ? html`<div class="why"><span class="muted small">Reply${m.sent_at ? ` (sent ${fmtTime(m.sent_at)})` : ''}:</span> ${m.reply}</div>` : null}
+    ${m.reason ? html`<div class="muted small">${m.reason}</div>` : null}${m.error ? html`<div class="warn small">${m.error}</div>` : null}</div>`)}</section>`;
 }

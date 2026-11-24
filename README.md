@@ -192,6 +192,25 @@ Everything is set per preset under *Create → Creation settings*: video instruc
 - Captcha or login screens pause and alert you as usual; the agent never solves them.
 - The share panel's texts and selectors (`shareButton`, `shareDialog`, `shareSearch`, `shareSendTexts`, …) are in *Settings → TikTok page selectors*. I built this against a fake share panel because the real one couldn't be reached from here. If TikTok's panel differs, the failed shares in *History → Shares* say which step failed.
 
+## Reply to private messages (off by default)
+
+*Engage → Private messages.* When on, the agent opens TikTok's **Messages** page in the chosen account's Edge window (the watcher, or a posting account). It does this every few minutes while the app runs and after each watching session, never in the middle of one. It reads unread chats and drafts a reply with the AI using the conversation and your persona. The reply prompt is editable in *AI & Prompts* (with reset to default).
+- **Who gets replies:** only the usernames on your list (default **@bibacau**), friends (mutual follows), or anyone.
+- **Require my approval:** on by default. Drafts wait in *Post → Queue → Messages waiting for your approval* (edit / approve / reject). When off, replies are typed into the chat character by character and sent.
+- **Limits:** a daily cap and a maximum number of replies per conversation per hour.
+- **Fixed safety rules (not settings):**
+  - It never sends links, phone numbers, emails, addresses, passwords, payment details or codes, and never agrees to money, deals or meetings.
+  - If asked whether it's a bot, the reply says honestly that it is written with an AI assistant; it never claims to be human.
+  - Spam and scam messages are ignored.
+  - Anything sensitive (asking for a phone number, money, a meeting…) or abusive is **not answered**: you get an alert on the Status page instead.
+  - A draft that breaks a rule is blocked.
+  - Captcha or login screens stop the check and alert you.
+- **Never twice:** the same message is never answered twice. *History → Messages* lists every message read and every reply (who, time, text, result, reason).
+- **If something fails:** if the Messages page can't be read or sending fails, the Status page shows which step failed. The Messages-page selectors (`msgPage`, `msgConversation`, `msgItem`, `msgMine`, `msgInput`, `msgSend`, …) are in *Settings → TikTok page selectors*, and the page address is in *Settings → Browser*. I built this against a fake Messages page because the real one couldn't be reached from here, so try **Check inbox now** with approval on first.
+
+## Session numbers
+*History → Sessions* updates while a session runs (time, videos, saved). Sessions cut short by a crash or restart are closed at the next start with their real numbers and marked *interrupted*.
+
 ## Posting (phase 3)
 
 ### 1. Add your TikTok account(s)

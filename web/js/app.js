@@ -4,7 +4,7 @@ import { html, get, post, setToken, toast } from './api.js';
 import { live, shared, connect, useLive, reloadPresets } from './store.js';
 import { StatusPage } from './pages/status.js';
 import { PicksPage } from './pages/picks.js';
-import { PresetSection, PresetsPage, ShareTest } from './pages/presets.js';
+import { PresetSection, PresetsPage, ShareTest, InboxPanel } from './pages/presets.js';
 import { AiPage } from './pages/ai.js';
 import { BudgetPage } from './pages/budget.js';
 import { HistoryPage } from './pages/history.js';
@@ -84,7 +84,7 @@ function page(tab) {
     case 'watch': return html`<${PresetSection} section="watch" />`;
     case 'schedule': return html`<${PresetSection} section="schedule" />`;
     case 'save': return html`<div><${PresetSection} section="save" /><${ShareTest} /></div>`;
-    case 'engage': return html`<${PresetSection} section="engagement" />`;
+    case 'engage': return html`<div><${PresetSection} section="engagement" /><${InboxPanel} /></div>`;
     case 'create': return html`<${CreatePage} />`;
     case 'post': return html`<${PostPage} />`;
     case 'presets': return html`<${PresetsPage} />`;

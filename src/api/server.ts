@@ -16,6 +16,7 @@ import { nextSlot, postSettingsFor, poster } from '../post/poster.ts';
 import { analyticsAt, latestMetrics, performanceSummary } from '../post/analytics.ts';
 import { engagementStats, listComments } from '../watch/engage.ts';
 import { listSearches } from '../watch/search.ts';
+import { approveMessage, listMessages, rejectMessage } from '../watch/messages.ts';
 import { approveShare, listShares, rejectShare, retryBlocked, retryShare, sharingPaused, testShare } from '../watch/share.ts';
 import { EDGE_VOICES } from '../settings/schema.ts';
 import { paths } from '../paths.ts';
@@ -200,6 +201,14 @@ export async function buildServer(): Promise<FastifyInstance> {
     const page = await controller.browser.ensure();
     return testShare(page, preset.data.save.share, (req.body as any)?.url || undefined);
   });
+  app.get('/api/messages', async () => ({ messages: listMessages(), last: controller.lastInboxResult }));
+  app.post('/api/messages/check', async () => controller.checkInboxNow(true));
+  app.post('/api/messages/:id/approve', async req => {
+    approveMessage(Number((req.params as any).id), (req.body as any)?.text);
+    void controller.checkInboxNow(true).catch(() => {});
+    return { ok: true, willSend: controller.status.state === 'idle' ? 'now' : 'after the current session' };
+  });
+  app.post('/api/messages/:id/reject', async req => { rejectMessage(Number((req.params as any).id)); return { ok: true }; });
   app.post('/api/shares/:id/reject', async req => { rejectShare(Number((req.params as any).id)); return { ok: true }; });
   app.post('/api/shares/retry', async () => {
     const n = retryBlocked();

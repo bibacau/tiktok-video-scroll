@@ -11,6 +11,7 @@ import { generatePicks } from '../watch/picks.ts';
 import { creator } from '../create/pipeline.ts';
 import { postComment } from '../watch/engage.ts';
 import { queuePicks, shareQueued } from '../watch/share.ts';
+import { checkInbox, sendApproved } from '../watch/messages.ts';
 import { savePlan, todaysPlan, watchedSecondsToday, type PlanEntry } from '../schedule/planner.ts';
 
 export type State = 'idle' | 'starting' | 'running' | 'paused' | 'needs_user' | 'stopping';
@@ -168,6 +169,41 @@ class Controller extends EventEmitter {
   }
   private sharing = false;
 
+  // ------------------------------------------------------- private messages
+  private lastInbox = 0;
+  private checkingInbox = false;
+  lastInboxResult: any = null;
+  /** Check the inbox (Engage → Private messages). Never during a watching session in the watcher window. */
+  async checkInboxNow(force = false): Promise<any> {
+    const preset = getPreset(getDayPresets()[zoned().weekday]);
+    const cfg = preset?.data.engagement.messages;
+    if (!cfg || (!cfg.enabled && !force)) return { skipped: 'Replying to private messages is off' };
+    if (this.checkingInbox) return { skipped: 'Already checking' };
+    if (cfg.inbox === 'watcher' && this.status.state !== 'idle') return { skipped: 'A watching session is running — the inbox is checked after it' };
+    if (cfg.inbox === 'account' && !cfg.account) return { skipped: 'Choose the posting account in Engage → Private messages' };
+    this.checkingInbox = true;
+    const account = cfg.inbox === 'watcher' ? 'watcher' : cfg.account;
+    const own = cfg.inbox === 'watcher' ? null : new BrowserManager(() => `acct-${cfg.account}`);
+    try {
+      const page = own ? await own.ensure() : await this.browser.ensure();
+      const hooks = { alert: (kind: string, message: string) => this.set({ alert: { kind, message, at: nowIso() } }) };
+      const sent = await sendApproved(page, account);
+      const r = await checkInbox(page, cfg, account, hooks);
+      this.lastInboxResult = { at: nowIso(), ...r, sentApproved: sent };
+      log('info', 'messages', `Inbox checked: ${r.conversations} unread chat(s), ${r.replied + sent} replied, ${r.pending} waiting for approval, ${r.flagged} flagged`);
+      return this.lastInboxResult;
+    } catch (e: any) {
+      const msg = `Private messages — "${e.step ?? 'check'}" failed: ${e.message}`;
+      this.lastInboxResult = { at: nowIso(), error: msg };
+      log('warn', 'messages', msg);
+      this.set({ alert: { kind: 'messages_error', message: msg, at: nowIso() } });
+      return this.lastInboxResult;
+    } finally {
+      this.lastInbox = Date.now(); this.checkingInbox = false;
+      if (own) await own.close().catch(() => {});
+    }
+  }
+
   private async afterSession(preset: any) {
     this.postApprovedComments().catch(e => log('warn', 'engage', e.message));
     if (!preset.data.save.autoPicks) return;
@@ -179,6 +215,7 @@ class Controller extends EventEmitter {
       creator.autoCreate(preset);
     }
     await this.shareQueuedNow(preset).catch(e => log('warn', 'share', e.message));
+    if (preset.data.engagement.messages?.enabled) await this.checkInboxNow().catch(e => log('warn', 'messages', e.message));
   }
 
   pause() {
@@ -284,6 +321,10 @@ class Controller extends EventEmitter {
     this.schedTimer = setTimeout(tick, 3000);
   }
   private async schedulerTick() {
+    const msgCfg = getPreset(getDayPresets()[zoned().weekday])?.data.engagement.messages;
+    if (msgCfg?.enabled && this.status.state === 'idle' && Date.now() - this.lastInbox >= msgCfg.checkEveryMinutes * 60_000) {
+      this.checkInboxNow().catch(e => log('warn', 'messages', e.message));
+    }
     const plan = todaysPlan();
     const z = zoned();
     let changed = false;

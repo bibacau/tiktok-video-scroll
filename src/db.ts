@@ -56,6 +56,10 @@ CREATE TABLE IF NOT EXISTS shares (
   video_key TEXT NOT NULL, video_url TEXT, author TEXT, recipient TEXT NOT NULL, mode TEXT, status TEXT NOT NULL,
   telegram TEXT, error TEXT);
 CREATE INDEX IF NOT EXISTS shares_key ON shares(video_key, recipient);
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, day TEXT NOT NULL, account TEXT NOT NULL, conversation TEXT NOT NULL,
+  name TEXT, msg_hash TEXT NOT NULL, incoming TEXT, reply TEXT, status TEXT NOT NULL, reason TEXT, error TEXT, sent_at TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS messages_once ON messages(account, conversation, msg_hash);
 CREATE TABLE IF NOT EXISTS day_plans (day TEXT PRIMARY KEY, preset_id TEXT, signature TEXT, plan TEXT NOT NULL);
 `;
 

@@ -12,6 +12,7 @@ import { DEFAULT_POST_SELECTORS } from '../settings/schema.ts';
 import { paths } from '../paths.ts';
 import { log } from '../log.ts';
 import { zoned } from '../time.ts';
+import { until } from '../browser/wait.ts';
 import { profileOf } from './accounts.ts';
 
 export interface UploadRequest {
@@ -55,19 +56,21 @@ async function dismissModals(page: Page, ms = 6000) {
 /** Fixed rule: turn on TikTok's AI-generated label and confirm it is on. */
 export async function ensureAiLabel(page: Page): Promise<{ ok: boolean; error?: string }> {
   const ps = postSelectors();
-  let st = await runScript<any>(page, 'aiLabel', { texts: ps.aiLabelTexts, turnOn: false });
-  if (!st.found) {
-    await runScript(page, 'clickByText', { texts: ps.showMoreTexts });
-    await sleep(800);
-    st = await runScript<any>(page, 'aiLabel', { texts: ps.aiLabelTexts, turnOn: false });
+  const read = () => runScript<any>(page, 'aiLabel', { texts: ps.aiLabelTexts, turnOn: false });
+  let st = await until(async () => { const s = await read(); return s.found ? s : null; }, 3000);
+  if (!st) { // the setting is behind "Show more"
+    await until(() => runScript(page, 'clickByText', { texts: ps.showMoreTexts }), 5000);
+    st = await until(async () => { const s = await read(); return s.found ? s : null; });
   }
-  if (!st.found) return { ok: false, error: 'The "AI-generated content" setting was not found on the upload page' };
+  if (!st) return { ok: false, error: 'The "AI-generated content" setting did not appear within 10 s on the upload page' };
   if (st.checked !== true) {
     await runScript(page, 'aiLabel', { texts: ps.aiLabelTexts, turnOn: true });
-    await sleep(900);
-    await runScript(page, 'clickByText', { texts: ps.aiConfirmTexts, inDialog: true }); // "Turn on" confirmation, if shown
-    await sleep(900);
-    st = await runScript<any>(page, 'aiLabel', { texts: ps.aiLabelTexts, turnOn: false });
+    // a "Turn on" confirmation may appear: keep confirming until the switch reads ON (or 10 s pass)
+    st = await until(async () => {
+      await runScript(page, 'clickByText', { texts: ps.aiConfirmTexts, inDialog: true });
+      const s = await read();
+      return s.checked === true ? s : null;
+    }) ?? await read();
   }
   return st.checked === true ? { ok: true } : { ok: false, error: 'Could not confirm the "AI-generated content" switch is on' };
 }
@@ -80,12 +83,11 @@ async function setPrivacy(page: Page, privacy: 'friends' | 'private'): Promise<{
   const row = label.locator('xpath=ancestor::*[.//button[@role="combobox"]][1]');
   const trigger = row.locator('button[role="combobox"]').first();
   await trigger.click({ timeout: 4000 }).catch(() => {});
-  await sleep(600);
   const opt = page.getByRole('option', { name: wanted }).first();
-  if (!(await opt.isVisible({ timeout: 3000 }).catch(() => false))) { await page.keyboard.press('Escape').catch(() => {}); return { ok: false, value: 'option not found' }; }
+  if (!(await until(() => opt.isVisible().catch(() => false)))) { await page.keyboard.press('Escape').catch(() => {}); return { ok: false, value: 'option not found' }; }
   await opt.click({ timeout: 4000 }).catch(() => {});
-  await sleep(500);
-  const shown = String(await row.textContent().catch(() => '')).replace(/who can see this post/i, '').trim();
+  const shown = (await until(async () => { const s = String(await row.textContent().catch(() => '')).replace(/who can see this post/i, '').trim(); return wanted.test(s) ? s : null; }))
+    ?? String(await row.textContent().catch(() => '')).replace(/who can see this post/i, '').trim();
   return { ok: wanted.test(shown), value: shown.slice(0, 40) };
 }
 
@@ -153,7 +155,9 @@ export async function uploadVideo(req: UploadRequest): Promise<UploadResult> {
   try {
     const page = await browser.ensure();
     await page.goto(base() + ps.uploadPath, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-    await sleep(1500);
+    // Wait until either the upload page (file input) or a login / verification screen shows.
+    await until(async () => (await page.locator(ps.fileInput.join(', ')).count().catch(() => 0)) > 0 || /\/login/.test(page.url())
+      || !!(await runScript<any>(page, 'inspect', selectors()).catch(() => null))?.guard, 15_000);
     const guard = (await runScript<any>(page, 'inspect', selectors()).catch(() => null))?.guard;
     if (guard || /\/login/.test(page.url())) return { ok: false, needsUser: true, code: 'NEEDS_USER', error: guard?.kind === 'captcha' ? 'TikTok shows a verification check — open the account (Log in) and complete it yourself' : 'This account is not logged in — press Log in for it' };
     const input = page.locator(ps.fileInput.join(', ')).first();
@@ -181,7 +185,7 @@ export async function uploadVideo(req: UploadRequest): Promise<UploadResult> {
     const ai = await ensureAiLabel(page);
     if (!ai.ok) return { ok: false, code: 'AI_LABEL_FAILED', error: `${ai.error}. The video was NOT posted (the AI-generated label is required).` };
     await dismissModals(page, 3000);
-    let button = await firstVisible(page, ps.postButton, 3000);
+    let button = await firstVisible(page, ps.postButton, 10_000);
     if (!button) {
       const re = new RegExp(`^(${ps.postButtonTexts.map(esc).join('|')})$`, 'i');
       const byRole = page.getByRole('button', { name: re }).first();

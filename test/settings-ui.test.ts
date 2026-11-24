@@ -96,3 +96,50 @@ test('another dashboard updates live; saved API keys are shown as saved', { skip
   assert.equal(info.dataDir, DATA);
   await page.close();
 });
+
+test('the TikTok page selectors box (JSON) really persists after paste + save + reload', { skip: !BROWSER && 'no browser' }, async () => {
+  const page = await browser.newPage();
+  await page.goto(`${URL_}/#settings`);
+  const box = page.locator('.field', { hasText: 'TikTok page selectors' }).locator('textarea').first();
+  await box.waitFor();
+  const current = JSON.parse(await box.inputValue());
+  // also change another field on the same page just before, like a real editing session
+  await fieldInput(page, 'Exchange rate').fill('4.33');
+  const mine = { ...current, shareButton: ["path[d^='M23.82 3.5']"], myExtra: ['div.mine'] };
+  await box.fill('{ "broken": ');              // half-pasted, invalid
+  await page.waitForTimeout(400);
+  await box.fill(JSON.stringify(mine, null, 2)); // full paste
+  await saved(page);
+  await page.waitForTimeout(2500);               // any late autosave / live update must not revert it
+  await page.reload();
+  const again = page.locator('.field', { hasText: 'TikTok page selectors' }).locator('textarea').first();
+  await again.waitFor();
+  const shown = JSON.parse(await again.inputValue());
+  assert.deepEqual(shown.shareButton, ["path[d^='M23.82 3.5']"]);
+  assert.deepEqual(shown.myExtra, ['div.mine']);
+  const s = (await api('GET', '/api/app-settings')).json;
+  assert.deepEqual(s.selectors.shareButton, ["path[d^='M23.82 3.5']"]);
+  assert.equal(s.general.currencyRate, 4.33);
+  await page.close();
+});
+
+test('JSON box: curly quotes / trailing commas are repaired and saved; invalid JSON is shown loudly, never silently lost', { skip: !BROWSER && 'no browser' }, async () => {
+  const page = await browser.newPage();
+  await page.goto(`${URL_}/#settings`);
+  const box = page.locator('.field', { hasText: 'TikTok page selectors' }).locator('textarea').first();
+  await box.waitFor();
+  const cur = JSON.parse(await box.inputValue());
+  const pasted = JSON.stringify({ ...cur, myExtra: ['div.pasted'] }, null, 2).replace('"div.pasted"', '“div.pasted”,'); // curly quotes + trailing comma
+  await box.fill(pasted);
+  await saved(page);
+  assert.deepEqual((await api('GET', '/api/app-settings')).json.selectors.myExtra, ['div.pasted']);
+  await box.fill('{ "shareButton": [ "a", ');
+  await page.locator('.saveind.error', { hasText: 'Invalid JSON' }).waitFor({ timeout: 5000 });
+  assert.equal(await page.locator('.savebar.show').count(), 1, 'save bar shows the problem');
+  assert.deepEqual((await api('GET', '/api/app-settings')).json.selectors.myExtra, ['div.pasted'], 'old value still in use');
+  page.once('dialog', d => d.dismiss());
+  await page.click('nav a[href="#status"]');
+  await page.waitForTimeout(500);
+  assert.match(page.url(), /#settings/, 'leaving with invalid JSON asks first (and stays when you cancel)');
+  await page.close();
+});

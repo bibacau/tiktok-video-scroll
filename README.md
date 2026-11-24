@@ -188,6 +188,8 @@ Everything is set per preset under *Create → Creation settings*: video instruc
 - **Telegram fallback:** *Also send the link to Telegram* = only when sharing fails, or always. Set the bot token and chat ID in *Settings → Notifications*.
 - **Every save is accounted for:** History → Shares shows each saved video's outcome: sent, queued, waiting for approval, failed, or *skipped* with the reason (sharing off, picks mode, score too low, daily cap, duplicate). Failed and skipped shares have a **Retry** button.
 - **Feed without links:** TikTok's For You feed often doesn't show a video's link. The agent reads the video id from the player, or uses the share panel's **Copy link**. If the video moved on before it could be shared, it is queued and sent from the video's own page after the session.
+- **TikTok's real share panel (2026):** the share icon is matched by its svg path (`path[d^='M23.82 3.5']`). The panel is `.TUXModal` *Share to*, and recipients are `data-e2e="share-<username>"`; there's no "Send to" or "Send" button. Clicking the recipient either sends right away or shows a Send button. Both are handled, and success is detected by a *Sent* toast, *Sent* on the recipient, or the panel closing. Every step **waits up to ~10 s** for its element instead of looking once.
+- **Your saved selectors + the built-in ones:** your saved selectors are tried first and the built-in ones are always added after them. Selectors from an older version therefore never hide newer built-in fixes.
 - **Test share now** (under the Save settings): opens your latest saved video in the watcher's Edge window and runs the whole flow while you watch. It then lists each step (share button found, panel opened, Send to, recipient found or typed, Send clicked, confirmed). If a step fails it shows a screenshot and the text in the share panel; send me those if TikTok's panel needs different selectors.
 - Captcha or login screens pause and alert you as usual; the agent never solves them.
 - The share panel's texts and selectors (`shareButton`, `shareDialog`, `shareSearch`, `shareSendTexts`, …) are in *Settings → TikTok page selectors*. I built this against a fake share panel because the real one couldn't be reached from here. If TikTok's panel differs, the failed shares in *History → Shares* say which step failed.
@@ -207,6 +209,18 @@ Everything is set per preset under *Create → Creation settings*: video instruc
   - Captcha or login screens stop the check and alert you.
 - **Never twice:** the same message is never answered twice. *History → Messages* lists every message read and every reply (who, time, text, result, reason).
 - **If something fails:** if the Messages page can't be read or sending fails, the Status page shows which step failed. The Messages-page selectors (`msgPage`, `msgConversation`, `msgItem`, `msgMine`, `msgInput`, `msgSend`, …) are in *Settings → TikTok page selectors*, and the page address is in *Settings → Browser*. I built this against a fake Messages page because the real one couldn't be reached from here, so try **Check inbox now** with approval on first.
+
+### Fixing the Messages selectors from the real page
+1. In the dashboard, *Engage → Private messages → **🔍 Test inbox now***. It opens Messages and reads it step by step without typing or sending anything, then shows each step (✓/✗), a screenshot and the text on the page. If a step fails, send me that result first.
+2. Then open the Messages page yourself in the agent's Edge window (Status → *Open agent window*, then go to `https://www.tiktok.com/messages`) and press **F12**. For each item below: right-click it **on the page** → *Inspect*. In the Elements panel, move up to the line that highlights the **whole** item, then right-click that line → *Copy* → *Copy outerHTML*, and paste it into a text file:
+   1. **one conversation row** in the left list (the whole row: picture, name, last message);
+   2. **one row with an unread** dot/number;
+   3. **the top bar of an open chat** (with the other person's name);
+   4. **one message bubble from them** and **one from you** (the whole bubble);
+   5. **the box you type in**;
+   6. **the send button** (type one letter to make it appear, but **don't send**, and delete the letter afterwards);
+   7. for the whole Messages area (list + chat), right-click its outermost element → *Copy* → **Copy selector**.
+   Send me the file. These become the defaults (`msgPage`, `msgConversation`, `msgUnread`, `msgHeaderLink`, `msgItem`, `msgMine`, `msgText`, `msgInput`, `msgSend`).
 
 ## Session numbers
 *History → Sessions* updates while a session runs (time, videos, saved). Sessions cut short by a crash or restart are closed at the next start with their real numbers and marked *interrupted*.

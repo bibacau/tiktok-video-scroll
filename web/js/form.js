@@ -119,13 +119,30 @@ function Windows({ value, onChange }) {
   </div>`;
 }
 
+/** Parse JSON, repairing what copy-paste typically breaks: curly quotes and trailing commas. */
+export function tolerantJson(text) {
+  try { return JSON.parse(text); } catch { /* try a repair */ }
+  const fixed = text.replace(/[\u201C\u201D\u201E\u201F]/g, '"').replace(/[\u2018\u2019]/g, "'").replace(/,(\s*[}\]])/g, '$1');
+  return JSON.parse(fixed);
+}
+
 function JsonInput({ value, rows, onChange }) {
   const [text, setText] = useState(JSON.stringify(value, null, 2));
   const [err, setErr] = useState('');
-  return html`<div><textarea class="mono" rows=${rows || 10} value=${text} onInput=${e => {
+  const [focused, setFocused] = useState(false);
+  const ref = useRef(null);
+  // Show the saved value when it changes elsewhere (not while you are typing in the box).
+  useEffect(() => {
+    if (focused || err) return;
+    let same = false; try { same = JSON.stringify(tolerantJson(text)) === JSON.stringify(value); } catch { /* */ }
+    if (!same) setText(JSON.stringify(value, null, 2));
+  }, [JSON.stringify(value)]);
+  const report = invalid => ref.current?.dispatchEvent(new CustomEvent('json-invalid', { bubbles: true, detail: { invalid } }));
+  return html`<div><textarea ref=${ref} class="mono" rows=${rows || 10} value=${text} onFocus=${() => setFocused(true)} onBlur=${() => setFocused(false)} onInput=${e => {
     setText(e.target.value);
-    try { onChange(JSON.parse(e.target.value)); setErr(''); } catch (x) { setErr('Invalid JSON — not saved until fixed'); }
-  }} />${err ? html`<p class="warn">${err}</p>` : null}</div>`;
+    try { onChange(tolerantJson(e.target.value)); setErr(''); report(false); }
+    catch (x) { setErr(`Invalid JSON — NOT saved: ${String(x.message).slice(0, 120)}`); report(true); }
+  }} />${err ? html`<p class="warn">⚠️ ${err}. Fix it (or press Discard) — the old value is still in use.</p>` : null}</div>`;
 }
 
 /** Forms with changes that are not saved yet (pending autosave, failed or conflicting). */
@@ -193,11 +210,20 @@ export function SettingsForm({ groups, onSave, onReload, mode = 'groups', autosa
   };
   const reload = async () => { discard(); await onReload?.(); };
 
-  const anyDirty = Object.keys(dirty).length > 0;
+  const rootRef = useRef(null);
+  const [invalid, setInvalid] = useState(0);
   useEffect(() => {
-    if (anyDirty || state === 'conflict' || state === 'error') unsaved.set(id, { flush: saveAll, state });
+    const el = rootRef.current; if (!el) return;
+    const bad = new Set();
+    const on = e => { if (e.detail.invalid) bad.add(e.target); else bad.delete(e.target); setInvalid(bad.size); };
+    el.addEventListener('json-invalid', on);
+    return () => el.removeEventListener('json-invalid', on);
+  }, []);
+  const anyDirty = Object.keys(dirty).length > 0 || invalid > 0;
+  useEffect(() => {
+    if (anyDirty || state === 'conflict' || state === 'error') unsaved.set(id, { flush: saveAll, state: invalid ? 'error' : state });
     else unsaved.delete(id);
-  }, [anyDirty, state]);
+  }, [anyDirty, state, invalid]);
   // Leaving the page: save what is pending right away.
   useEffect(() => () => { if (Object.keys(live.current.dirty).length && autosave) saveAll(); unsaved.delete(id); }, []);
 
@@ -213,13 +239,13 @@ export function SettingsForm({ groups, onSave, onReload, mode = 'groups', autosa
     : groups.map(g => g.field.type === 'group'
         ? html`<${Group} key=${g.key} field=${g.field} value=${drafts[g.key]} onChange=${v => change(g.key, v)} />`
         : html`<section class="card" key=${g.key}><${FieldRow} field=${g.field} value=${drafts[g.key]} onChange=${v => change(g.key, v)} /></section>`);
-  return html`<div class="settingsform" data-state=${state}>
-    ${indicator ? html`<div class=${`saveind ${state}`}>${indicator}</div>` : null}
+  return html`<div class="settingsform" ref=${rootRef} data-state=${invalid ? 'error' : state}>
+    ${invalid ? html`<div class="saveind error">⚠️ Invalid JSON — not saved</div>` : indicator ? html`<div class=${`saveind ${state}`}>${indicator}</div>` : null}
     ${state === 'conflict' ? html`<div class="banner">${error} <button class="btn small" onClick=${reload}>Reload</button></div>` : null}
     ${state === 'error' ? html`<div class="warn">Not saved: ${error} <button class="btn small" onClick=${saveAll}>Try again</button></div>` : null}
     ${body}
     <div class=${`savebar ${anyDirty || state === 'error' ? 'show' : ''}`}>
-      <span>${state === 'saving' ? 'Saving…' : state === 'error' ? 'Not saved' : 'Unsaved changes (saving automatically)'}</span>
+      <span>${invalid ? 'Invalid JSON — fix it to save' : state === 'saving' ? 'Saving…' : state === 'error' ? 'Not saved' : 'Unsaved changes (saving automatically)'}</span>
       <button class="btn ghost" onClick=${discard}>Discard</button>
       <button class="btn primary" disabled=${state === 'conflict'} onClick=${saveAll}>Save now</button>
     </div>

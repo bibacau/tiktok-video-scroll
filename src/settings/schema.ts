@@ -74,6 +74,20 @@ export const saveSchema = s.group('Saving & picks', {
   notify: s.group('Notify when picks are ready', {
     telegram: s.bool('Telegram', false), email: s.bool('Email', false),
   }, { phase: 4, help: 'Set up the Telegram bot / email account in Settings.' }),
+  share: s.group('Share saved videos to my main account', {
+    enabled: s.bool('Share saved videos to my main account', true, { help: "Uses TikTok's own Share → Send to, in the watcher's Edge window. The watcher account and your main account must follow each other to message." }),
+    to: s.text('Send to (TikTok username)', 'bibacau', { help: 'Without @.' }),
+    mode: s.select('What to share', 'every', [
+      { value: 'every', label: 'Every video the agent saves, right when it saves it' },
+      { value: 'picks', label: "Only Today's picks, once a day" },
+      { value: 'score', label: 'Only saved videos with a score of at least…' }]),
+    minScore: s.slider('Minimum score (for "score" mode)', 85, 0, 100),
+    dailyCap: s.number('Max shares per day', 30, 0, 500),
+    requireApproval: s.bool('Require my approval for each share', false, { help: 'On: shares wait in Post → Queue until you approve them.' }),
+    telegram: s.select('Also send the link to Telegram', 'off', [
+      { value: 'off', label: 'No' }, { value: 'on_failure', label: 'Only when sharing on TikTok fails' }, { value: 'always', label: 'Always' }],
+      { help: 'Needs the Telegram bot token and chat ID in Settings → Notifications.' }),
+  }),
 });
 
 const capGroup = (label: string, daily: number, session: number, minScore: number, when: string) => s.group(label, {
@@ -235,6 +249,14 @@ export const DEFAULT_SELECTORS = {
   favouriteButton: ['[data-e2e="undefined-icon"]', '[data-e2e="favorite-icon"]', '[data-e2e="collect-icon"]', 'button[aria-label*="favourite" i]', 'button[aria-label*="favorite" i]'],
   commentInput: ['[data-e2e="comment-input"] [contenteditable="true"]', '[data-e2e="comment-input"]', 'div[contenteditable="true"][role="textbox"]'],
   commentPost: ['[data-e2e="comment-post"]', 'button[aria-label*="post" i]'],
+  shareButton: ['[data-e2e="share-icon"]', '[data-e2e="browse-share-icon"]', '[data-e2e="video-share"]', 'button[aria-label*="share" i]'],
+  shareDialog: ['[role="dialog"]', '[aria-modal="true"]', '[data-e2e="share-panel"]', '[class*="SharePanel" i]', '[class*="share-container" i]'],
+  shareSearch: ['input[placeholder*="Search" i]', 'input[placeholder*="Cari" i]', 'input[type="search"]', 'input'],
+  shareSendToTexts: ['Send to', 'Send to friends', 'Hantar kepada', 'Send'],
+  shareSendTexts: ['Send', 'Hantar'],
+  shareSentTexts: ['Sent', 'Dihantar', 'Message sent'],
+  shareBlockedTexts: ["can't send", 'cannot send', 'unable to send', 'not allowed to message', 'only send messages to', 'Tidak dapat menghantar'],
+  shareNotFoundTexts: ['No results', 'No users found', 'Tiada hasil'],
 };
 
 /** TikTok Studio upload page (editable in Settings → Posting page selectors). */

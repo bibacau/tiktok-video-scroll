@@ -178,6 +178,17 @@ Everything is set per preset under *Create → Creation settings*: video instruc
 
 **Tested here with fakes:** the whole pipeline is tested with real ffmpeg rendering, but against fake AI, voice, Pexels and image servers. The real Edge voice service, Pexels/Pixabay, OpenAI images and Replicate couldn't be reached from where this was built, so check each once with a short video.
 
+## Share saved videos to your main account
+
+*Save → Share saved videos to my main account* is **on by default**, sending to **@bibacau**. Every video the agent saves is sent right away with TikTok's own **Share → Send to → @bibacau → Send**, in the watcher's Edge window. If @bibacau isn't in the short recent list, the name is typed into the share panel's search box.
+- **Modes:** every saved video (default), only Today's picks (once a day, sent between sessions), or only saved videos scoring at least X. There's also a daily cap.
+- **Require my approval:** off by default. When on, shares wait in *Post → Queue → Shares waiting for your approval*.
+- **Never twice:** a video is only ever sent once to the same account. Every share (video, time, result) is in *History → Shares*.
+- **What you must do once:** TikTok only lets you send to people you can message. **On the watcher account follow @bibacau, and on @bibacau follow the watcher account back.** If TikTok can't find @bibacau or won't allow messaging, the Status page explains this, sharing pauses for the day (TikTok isn't asked again and again), and after you've followed each other you press **Retry sharing**.
+- **Telegram fallback:** *Also send the link to Telegram* = only when sharing fails, or always. Set the bot token and chat ID in *Settings → Notifications*.
+- Captcha or login screens pause and alert you as usual; the agent never solves them.
+- The share panel's texts and selectors (`shareButton`, `shareDialog`, `shareSearch`, `shareSendTexts`, …) are in *Settings → TikTok page selectors*. I built this against a fake share panel because the real one couldn't be reached from here. If TikTok's panel differs, the failed shares in *History → Shares* say which step failed.
+
 ## Posting (phase 3)
 
 ### 1. Add your TikTok account(s)

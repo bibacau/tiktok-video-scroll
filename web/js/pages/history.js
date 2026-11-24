@@ -31,9 +31,11 @@ export function HistoryPage() {
   return html`<div>
     <div class="subtabs"><button class=${tab === 'sessions' ? 'on' : ''} onClick=${() => setTab('sessions')}>Sessions</button>
       <button class=${tab === 'searches' ? 'on' : ''} onClick=${() => setTab('searches')}>AI searches</button>
+      <button class=${tab === 'shares' ? 'on' : ''} onClick=${() => setTab('shares')}>Shares</button>
       <button class=${tab === 'events' ? 'on' : ''} onClick=${() => setTab('events')}>Event log</button></div>
     ${tab === 'searches' ? html`<${Searches} />` : null}
-    ${tab === 'searches' ? null : tab === 'sessions' ? html`<div>
+    ${tab === 'shares' ? html`<${Shares} />` : null}
+    ${tab === 'searches' || tab === 'shares' ? null : tab === 'sessions' ? html`<div>
       ${!sessions.length ? html`<p class="pad muted">No sessions yet.</p>` : null}
       ${sessions.map(s => html`<section class="card">
         <header class="group-head" onClick=${() => setOpen(open === s.id ? null : s.id)}>
@@ -57,4 +59,18 @@ function Searches() {
     <span class=${`pill small ${r.status === 'done' ? 'done' : 'missed'}`}>${r.status}</span>
     <span class="small">${fmtTime(r.at)}</span><b>"${r.query}"</b>${r.method ? html`<span class="muted small">${r.method === 'typed' ? 'typed into the search bar' : 'opened by link'}</span>` : null}
     <div class="why">${r.reason}</div>${r.note ? html`<div class="warn small">${r.note}</div>` : null}</div>`)}</section>`;
+}
+
+function Shares() {
+  const [d, setD] = useState(null);
+  useEffect(() => { get('/api/shares').then(setD).catch(e => toast(e.message, 'err')); }, []);
+  if (!d) return html`<p class="pad muted">Loading…</p>`;
+  if (!d.shares.length) return html`<p class="pad muted">Nothing shared yet.</p>`;
+  return html`<section class="card">${d.paused ? html`<p class="warn">Sharing is paused for today (TikTok refused the recipient). See the Status page.</p>` : null}
+    ${d.shares.map(s => html`<div class="vrow">
+      <span class=${`pill small ${s.status === 'done' ? 'done' : s.status === 'pending' || s.status === 'approved' ? 'pending' : 'missed'}`}>${s.status}</span>
+      <span class="small">${fmtTime(s.at)}</span><b>@${s.author || '?'}</b><span class="muted small">→ @${s.recipient}</span>
+      <a class="small" href=${s.video_url} target="_blank" rel="noopener">video ↗</a>
+      ${s.telegram ? html`<span class="muted small">Telegram: ${s.telegram}</span>` : null}
+      ${s.error ? html`<div class="warn small">${s.error}</div>` : null}</div>`)}</section>`;
 }

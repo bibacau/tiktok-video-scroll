@@ -51,6 +51,11 @@ CREATE INDEX IF NOT EXISTS engagements_day ON engagements(day, kind);
 CREATE TABLE IF NOT EXISTS searches (
   id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, day TEXT NOT NULL, session_id INTEGER, query TEXT NOT NULL,
   reason TEXT, status TEXT NOT NULL, method TEXT, note TEXT);
+CREATE TABLE IF NOT EXISTS shares (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, day TEXT NOT NULL, session_id INTEGER, video_row INTEGER,
+  video_key TEXT NOT NULL, video_url TEXT, author TEXT, recipient TEXT NOT NULL, mode TEXT, status TEXT NOT NULL,
+  telegram TEXT, error TEXT);
+CREATE INDEX IF NOT EXISTS shares_key ON shares(video_key, recipient);
 CREATE TABLE IF NOT EXISTS day_plans (day TEXT PRIMARY KEY, preset_id TEXT, signature TEXT, plan TEXT NOT NULL);
 `;
 

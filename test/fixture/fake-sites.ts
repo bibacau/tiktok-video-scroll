@@ -37,6 +37,7 @@ const item = (v: typeof VIDEOS[number], i: number) => `
     <a href="/@${v.user}/video/${v.id}">link</a>
     <button data-e2e="like-icon" aria-pressed="false" onclick="this.setAttribute('aria-pressed','true');fetch('/engage?kind=like&id=${v.id}')">♥</button>
     <button data-e2e="favorite-icon" aria-pressed="false" onclick="this.setAttribute('aria-pressed','true');fetch('/engage?kind=favourite&id=${v.id}')">🔖</button>
+    <button data-e2e="share-icon" onclick="openShare('${v.id}')">Share</button>
     <button data-e2e="feed-follow" onclick="this.textContent='Following';fetch('/engage?kind=follow&id=${v.user}')">Follow</button>
   </div>
 </article>`;
@@ -46,7 +47,7 @@ const PAGE = (captchaAfter: number, loops: number) => `<!doctype html><html><hea
 .item{height:100vh;scroll-snap-align:start;display:flex;gap:20px;align-items:center;justify-content:center;border-bottom:1px solid #ccc}
 video{height:85vh;aspect-ratio:9/16;background:#000} .side{width:300px}
 #captcha-verify-container{position:fixed;inset:30% 35%;background:#fff;border:3px solid red;z-index:9;padding:20px}</style></head>
-<body><input data-e2e="search-user-input" id="sq" placeholder="Search" style="position:fixed;top:4px;left:4px;z-index:5;width:200px">
+<body>__SHARE_UI__<input data-e2e="search-user-input" id="sq" placeholder="Search" style="position:fixed;top:4px;left:4px;z-index:5;width:200px">
 <div class="feed" id="feed">${Array.from({ length: loops }, () => VIDEOS).flat().map(item).join('')}</div>
 <script>
 const feed = document.getElementById('feed'); let idx = 0, moves = 0; const items = [...document.querySelectorAll('.item')];
@@ -59,6 +60,37 @@ setTimeout(() => show(0), 300);
 
 export const engaged: Array<{ kind: string; id: string }> = [];
 export const searchesSeen: Array<{ q: string; keys: number }> = [];
+export const sharesSeen: Array<{ id: string; to: string }> = [];
+/** Share panel like TikTok's: Share → Send to → recent contact list (1 shown) + search box → Send. */
+export const shareOpts = { recipients: ['kawan1', 'bibacau', 'kawan2'], notMutual: false };
+const SHARE_UI = () => `
+<div role="dialog" id="sharebox" style="display:none;position:fixed;top:15%;left:30%;background:#fff;border:2px solid #333;z-index:20;padding:10px;width:320px">
+  <div>Share to</div><button id="sendto">Send to</button>
+  <div id="friends" style="display:none"><input placeholder="Search" id="fs"><div id="flist"></div><div id="fmsg"></div><button id="fsend" disabled>Send</button></div>
+</div>
+<script>
+(() => {
+  const RECIP = ${JSON.stringify(shareOpts.recipients)}, NOT_MUTUAL = ${shareOpts.notMutual};
+  let shareId = null, chosen = null;
+  const reset = () => { sharebox.style.display = 'none'; friends.style.display = 'none'; fs.value = ''; chosen = null; fsend.disabled = true; fmsg.textContent = ''; };
+  window.openShare = id => { reset(); shareId = id; sharebox.style.display = 'block'; };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') reset(); }, true);
+  const render = q => {
+    const list = RECIP.filter(r => !q || r.includes(q.toLowerCase())).slice(0, q ? 10 : 1);
+    flist.innerHTML = list.map(r => '<div role="option" aria-selected="false" data-u="' + r + '" style="padding:4px"><span>' + r + '</span> <small>@' + r + '</small></div>').join('');
+    fmsg.textContent = q && !list.length ? 'No results' : '';
+    flist.querySelectorAll('[role=option]').forEach(o => o.onclick = () => { o.setAttribute('aria-selected', 'true'); chosen = o.dataset.u; fsend.disabled = false; });
+  };
+  sendto.onclick = () => { friends.style.display = 'block'; render(''); };
+  fs.addEventListener('keydown', e => e.stopPropagation());
+  fs.oninput = () => render(fs.value);
+  fsend.onclick = async () => {
+    if (NOT_MUTUAL) { fmsg.textContent = "You can't send messages to this account"; return; }
+    await fetch('/share?id=' + shareId + '&to=' + chosen);
+    fmsg.textContent = 'Sent'; setTimeout(reset, 700);
+  };
+})();
+</script>`;
 export const commentsPosted: Array<{ video: string; text: string }> = [];
 export function startFakeTikTok(port = 0, opts: { captchaAfter?: number; noSearchBox?: boolean } = {}): Promise<{ url: string; close: () => void }> {
   let pageLoads = 0;
@@ -80,6 +112,7 @@ export function startFakeTikTok(port = 0, opts: { captchaAfter?: number; noSearc
       res.end(`<!doctype html><body><h1>Results</h1>${VIDEOS.slice(0, 4).map(v => `<div data-e2e="search_video-item" style="width:200px;height:300px;display:inline-block"><a href="/@${v.user}/video/${v.id}">${v.caption}</a></div>`).join('')}</body>`);
       return;
     }
+    if (u.pathname === '/share') { sharesSeen.push({ id: u.searchParams.get('id')!, to: u.searchParams.get('to')! }); res.end('ok'); return; }
     if (u.pathname === '/engage') { engaged.push({ kind: u.searchParams.get('kind')!, id: u.searchParams.get('id')! }); res.end('ok'); return; }
     const vid = u.pathname.match(/^\/@[^/]+\/video\/(\d+)$/);
     if (vid && req.method === 'POST') { let b = ''; for await (const c of req) b += c; commentsPosted.push({ video: vid[1], text: b }); res.end('ok'); return; }
@@ -87,11 +120,12 @@ export function startFakeTikTok(port = 0, opts: { captchaAfter?: number; noSearc
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(`<!doctype html><body><video src="/clip0.webm" muted autoplay loop style="height:400px"></video><div data-e2e="browse-video-desc">video ${vid[1]}</div>
         <div id="list"></div><div data-e2e="comment-input"><div contenteditable="true" role="textbox" id="ci" style="min-height:30px;border:1px solid #ccc"></div></div>
+        <button data-e2e="browse-share-icon" onclick="openShare('${vid[1]}')">Share</button>${SHARE_UI()}
         <button data-e2e="comment-post" onclick="fetch(location.pathname,{method:'POST',body:ci.innerText}).then(()=>{const d=document.createElement('p');d.textContent=ci.innerText;list.appendChild(d);ci.textContent='';})">Post</button></body>`);
       return;
     }
     if (u.pathname === '/foryou' || u.pathname === '/') {
-      const html = PAGE(pageLoads++ === 0 ? opts.captchaAfter ?? 0 : 0, 4);
+      const html = PAGE(pageLoads++ === 0 ? opts.captchaAfter ?? 0 : 0, 4).replace('__SHARE_UI__', SHARE_UI());
       res.writeHead(200, { 'content-type': 'text/html' }); res.end(opts.noSearchBox ? html.replace(/<input data-e2e="search-user-input"[^>]*>/, '').replace(/let keys = 0;[\s\S]*?\+ keys; else if[^\n]*\n/, '') : html); return;
     }
     res.writeHead(404); res.end('not found');

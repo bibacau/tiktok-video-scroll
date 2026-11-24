@@ -16,6 +16,7 @@ import { nextSlot, postSettingsFor, poster } from '../post/poster.ts';
 import { analyticsAt, latestMetrics, performanceSummary } from '../post/analytics.ts';
 import { engagementStats, listComments } from '../watch/engage.ts';
 import { listSearches } from '../watch/search.ts';
+import { approveShare, listShares, rejectShare, retryBlocked, sharingPaused } from '../watch/share.ts';
 import { EDGE_VOICES } from '../settings/schema.ts';
 import { paths } from '../paths.ts';
 import { getDb } from '../db.ts';
@@ -185,6 +186,15 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
   app.get('/api/budget', async () => budgetSummary());
   app.get('/api/history/searches', async () => listSearches());
+  app.get('/api/shares', async () => ({ shares: listShares(), paused: sharingPaused() }));
+  app.post('/api/shares/:id/approve', async req => { approveShare(Number((req.params as any).id)); void controller.shareQueuedNow().catch(() => {}); return { ok: true, willSend: controller.status.state === 'idle' ? 'now' : 'after the current session' }; });
+  app.post('/api/shares/:id/reject', async req => { rejectShare(Number((req.params as any).id)); return { ok: true }; });
+  app.post('/api/shares/retry', async () => {
+    const n = retryBlocked();
+    if (controller.status.alert?.kind === 'share_blocked') controller.dismissAlert();
+    void controller.shareQueuedNow().catch(() => {});
+    return { ok: true, retrying: n };
+  });
 
   app.get('/api/info', async () => ({
     version: '0.1.0', lan: Object.values(os.networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i!.address),

@@ -93,6 +93,7 @@ function Queue() {
     <section class="card"><h3>Waiting for approval (${q.waiting.length})</h3>${!q.waiting.length ? html`<p class="muted">Finished videos from the Studio appear here.</p>` : null}</section>
     <div class="ccards">${q.waiting.map(c => html`<${WaitingCard} key=${c.id} c=${c} accounts=${accounts} reload=${load} />`)}</div>
     <${Comments} list=${q.comments} reload=${load} />
+    <${PendingShares} />
     ${q.scheduled.length ? html`<section class="card"><h3>Scheduled & in progress</h3>${q.scheduled.map(c => html`<${Row} c=${c} reload=${load} accounts=${accounts} />`)}</section>` : null}
     ${q.failed.length ? html`<section class="card"><h3>Failed</h3>${q.failed.map(c => html`<${Row} c=${c} reload=${load} accounts=${accounts} />`)}</section>` : null}
     ${q.posted.length ? html`<section class="card"><h3>Posted</h3>${q.posted.map(c => html`<${Row} c=${c} reload=${load} accounts=${accounts} />`)}</section>` : null}
@@ -152,4 +153,17 @@ export function PostPage() {
     <div class="subtabs">${tabs.map(([k, l]) => html`<button class=${tab === k ? 'on' : ''} onClick=${() => setTab(k)}>${l}</button>`)}</div>
     ${tab === 'queue' ? html`<${Queue} />` : tab === 'accounts' ? html`<${Accounts} />` : tab === 'analytics' ? html`<${Analytics} />` : html`<${PresetSection} section="post" />`}
   </div>`;
+}
+
+function PendingShares() {
+  const [rows, setRows] = useState([]);
+  const load = () => get('/api/shares').then(r => setRows(r.shares.filter(s => s.status === 'pending'))).catch(() => {});
+  useEffect(load, []);
+  if (!rows.length) return null;
+  return html`<section class="card"><h3>📤 Shares waiting for your approval</h3>
+    <p class="help">Saved videos to send to your main account (Save & picks → Share → "Require my approval" is on).</p>
+    ${rows.map(s => html`<div class="vrow"><div class="grow small"><b>@${s.author || '?'}</b> → @${s.recipient} · <a href=${s.video_url} target="_blank" rel="noopener">video ↗</a></div>
+      <button class="btn small primary" onClick=${guard(async () => { const r = await post(`/api/shares/${s.id}/approve`); toast(`Approved — sends ${r.willSend}`); load(); })}>Approve</button>
+      <button class="btn small ghost" onClick=${guard(async () => { await post(`/api/shares/${s.id}/reject`); load(); })}>Reject</button></div>`)}
+  </section>`;
 }

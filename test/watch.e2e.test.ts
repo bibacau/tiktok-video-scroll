@@ -170,3 +170,115 @@ test('AI search falls back to the search link only when no search box exists', {
   assert.equal(searchesSeen.at(-1)!.q, 'kuih bahulu');
   await c.browser.close();
 });
+
+test('share saved videos: every save sent once to @bibacau via Share → Send to (typed search), duplicates skipped', { skip: !BROWSER && 'no browser', timeout: 240_000 }, async () => {
+  const { sharesSeen, shareOpts } = await import('./fixture/fake-sites.ts');
+  shareOpts.recipients = ['kawan1', 'bibacau', 'kawan2']; shareOpts.notMutual = false;
+  tt.close();
+  tt = await startFakeTikTok(0, {});
+  const app = m.store.getAppSettings(); app.browser.baseUrl = tt.url; m.store.saveAppSettings(app);
+  const p = m.store.listPresets()[0];
+  p.data.watch.sources.aiSearch.enabled = false;
+  p.data.watch.behaviour.rewatch = true; // the same videos come round again → must not be shared twice
+  p.data.save.share = { enabled: true, to: 'bibacau', mode: 'every', minScore: 85, dailyCap: 50, requireApproval: false, telegram: 'off' };
+  m.store.updatePreset(p.id, { data: p.data });
+  sharesSeen.length = 0;
+  m.db.exec('DELETE FROM shares');
+  const c = m.controller;
+  await c.start({ minutes: 1.2 });
+  await waitFor(() => c.status.state === 'idle', 200_000, 'session end');
+  assert.ok(sharesSeen.length >= 2, `shared ${sharesSeen.length}`);
+  assert.ok(sharesSeen.every(s => s.to === 'bibacau'));
+  const ids = sharesSeen.map(s => s.id);
+  assert.equal(new Set(ids).size, ids.length, 'never the same video twice');
+  const recipeIds = ['7400000000000000001', '7400000000000000004', '7400000000000000006', '7400000000000000008'];
+  assert.ok(ids.every(id => recipeIds.includes(id)), 'only saved videos');
+  const savedTwice = m.db.prepare("SELECT video_key, COUNT(*) n FROM videos WHERE saved = 1 AND session_id = (SELECT MAX(id) FROM sessions) GROUP BY video_key HAVING n > 1").all();
+  assert.ok(savedTwice.length > 0, 'test really re-saved a video');
+  const rows = m.db.prepare("SELECT * FROM shares WHERE status = 'done'").all();
+  assert.equal(rows.length, ids.length);
+  assert.ok(rows.every((r: any) => r.recipient === 'bibacau' && r.video_url.includes('/video/')));
+});
+
+test('recipient missing → clear explanation, sharing paused, Telegram fallback; after following each other, Retry sends', { skip: !BROWSER && 'no browser', timeout: 240_000 }, async () => {
+  const http = await import('node:http');
+  const tg: string[] = [];
+  const tgs = http.createServer(async (req, res) => { let b = ''; for await (const x of req) b += x; tg.push(JSON.parse(b).text); res.end('{"ok":true}'); }).listen(0, '127.0.0.1');
+  await new Promise(r => tgs.once('listening', r));
+  process.env.TELEGRAM_API = `http://127.0.0.1:${(tgs.address() as any).port}`;
+  const { sharesSeen, shareOpts } = await import('./fixture/fake-sites.ts');
+  shareOpts.recipients = ['kawan1', 'kawan2']; // main account not reachable
+  tt.close(); tt = await startFakeTikTok(0, {});
+  const app = m.store.getAppSettings();
+  app.browser.baseUrl = tt.url;
+  app.notifications = { ...app.notifications, telegramBotToken: '123:abc', telegramChatId: '42' };
+  m.store.saveAppSettings(app);
+  const p = m.store.listPresets()[0];
+  p.data.save.share = { ...p.data.save.share, to: 'mainacct', telegram: 'on_failure' };
+  m.store.updatePreset(p.id, { data: p.data });
+  sharesSeen.length = 0;
+  const c = m.controller;
+  await c.start({ minutes: 0.8 });
+  await waitFor(() => c.status.state === 'idle', 200_000, 'session end');
+  assert.equal(c.status.alert?.kind, 'share_blocked');
+  assert.match(c.status.alert.message, /@mainacct.*follow/s);
+  assert.equal(sharesSeen.length, 0);
+  const rows = m.db.prepare("SELECT * FROM shares WHERE recipient = 'mainacct'").all();
+  assert.equal(rows.filter((r: any) => r.error && /follow/.test(r.error) && r.status === 'blocked').length >= 1, true);
+  assert.ok(tg.length >= 1 && tg.every(t => /tiktok|\/video\//.test(t)), 'links sent to Telegram instead');
+  // You make the accounts follow each other → Retry
+  shareOpts.recipients = ['kawan1', 'mainacct'];
+  const res = await fetch(`http://127.0.0.1:0`).catch(() => null); void res;
+  const { retryBlocked } = await import('../src/watch/share.ts');
+  assert.ok(retryBlocked() >= 1);
+  c.dismissAlert();
+  const n = await c.shareQueuedNow();
+  assert.ok(n >= 1, `retried ${n}`);
+  assert.ok(sharesSeen.every(s => s.to === 'mainacct') && sharesSeen.length === n);
+  assert.equal(new Set(sharesSeen.map(s => s.id)).size, sharesSeen.length, 'retry never sends a video twice');
+  const perVideo = m.db.prepare("SELECT video_key, COUNT(*) n FROM shares WHERE recipient = 'mainacct' GROUP BY video_key HAVING n > 1").all();
+  assert.equal(perVideo.length, 0, 'one share entry per video');
+  assert.equal(await c.shareQueuedNow(), 0, 'nothing left to send');
+  tgs.close();
+});
+
+test('not allowed to message → explained, not retried', { skip: !BROWSER && 'no browser', timeout: 120_000 }, async () => {
+  const { shareOpts } = await import('./fixture/fake-sites.ts');
+  const { shareOnPage } = await import('../src/watch/share.ts');
+  shareOpts.recipients = ['bibacau']; shareOpts.notMutual = true;
+  const page = await m.controller.browser.ensure();
+  await page.goto(`${tt.url}/@makcikcooks/video/7400000000000000001`);
+  await new Promise(r => setTimeout(r, 1500));
+  const r = await shareOnPage(page, 'bibacau');
+  assert.equal(r.ok, false);
+  assert.equal(r.kind, 'blocked');
+  assert.match(r.message!, /won't let the watcher account message @bibacau.*follow each other/s);
+  shareOpts.notMutual = false;
+  await m.controller.browser.close();
+});
+
+test('share with "require my approval": waits in the list, sends only after approval; picks mode queues once', { skip: !BROWSER && 'no browser', timeout: 120_000 }, async () => {
+  const { sharesSeen, shareOpts } = await import('./fixture/fake-sites.ts');
+  const share = await import('../src/watch/share.ts');
+  shareOpts.recipients = ['bibacau']; shareOpts.notMutual = false;
+  tt.close(); tt = await startFakeTikTok(0, {});
+  const app = m.store.getAppSettings(); app.browser.baseUrl = tt.url; m.store.saveAppSettings(app);
+  m.db.exec('DELETE FROM shares'); sharesSeen.length = 0;
+  const cfg = { enabled: true, to: 'bibacau', mode: 'every', minScore: 85, dailyCap: 50, requireApproval: true, telegram: 'off' };
+  const t = { videoKey: '7400000000000000006', url: `${tt.url}/@rotiman/video/7400000000000000006`, author: 'rotiman' };
+  assert.equal(await share.maybeShare(null, cfg, t, null, 90), 'pending');
+  assert.equal(await share.maybeShare(null, cfg, t, null, 90), 'skipped', 'no second entry for the same video');
+  assert.equal(sharesSeen.length, 0, 'nothing sent before approval');
+  const row = m.db.prepare("SELECT * FROM shares WHERE status = 'pending'").get();
+  share.approveShare(row.id);
+  const p = m.store.listPresets()[0]; p.data.save.share = { ...cfg, requireApproval: false }; m.store.updatePreset(p.id, { data: p.data });
+  assert.equal(await m.controller.shareQueuedNow(), 1);
+  assert.deepEqual(sharesSeen, [{ id: '7400000000000000006', to: 'bibacau' }]);
+  // picks mode: queue today's picks once (already-sent one is skipped)
+  const picks = [{ video_key: '7400000000000000006', url: t.url }, { video_key: '7400000000000000008', url: `${tt.url}/@laksalady/video/7400000000000000008` }];
+  assert.equal(share.queuePicks({ ...cfg, mode: 'picks', requireApproval: false }, picks), 1);
+  assert.equal(share.queuePicks({ ...cfg, mode: 'picks', requireApproval: false }, picks), 0, 'once');
+  assert.equal(await m.controller.shareQueuedNow(), 1);
+  assert.equal(sharesSeen.length, 2);
+  await m.controller.browser.close();
+});

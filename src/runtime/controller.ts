@@ -10,6 +10,7 @@ import { runSession, SessionOver, type SessionHost } from '../watch/session.ts';
 import { generatePicks } from '../watch/picks.ts';
 import { creator } from '../create/pipeline.ts';
 import { postComment } from '../watch/engage.ts';
+import { queuePicks, shareQueued } from '../watch/share.ts';
 import { savePlan, todaysPlan, watchedSecondsToday, type PlanEntry } from '../schedule/planner.ts';
 
 export type State = 'idle' | 'starting' | 'running' | 'paused' | 'needs_user' | 'stopping';
@@ -134,15 +135,31 @@ class Controller extends EventEmitter {
   }
   private postingComments = false;
 
+  /** Approved / picks-mode / retried shares — only between sessions, in the watcher's window. */
+  async shareQueuedNow(preset?: any) {
+    if (this.status.state !== 'idle' || this.sharing) return 0;
+    const p = preset ?? getPreset(getDayPresets()[zoned().weekday]);
+    const cfg = p?.data.save.share;
+    if (!cfg?.enabled || !(getDb().prepare("SELECT 1 FROM shares WHERE status = 'approved' LIMIT 1").get())) return 0;
+    this.sharing = true;
+    try {
+      const page = await this.browser.ensure();
+      return await shareQueued(page, cfg, { onBlocked: msg => this.set({ alert: { kind: 'share_blocked', message: msg, at: nowIso() } }) });
+    } finally { this.sharing = false; }
+  }
+  private sharing = false;
+
   private async afterSession(preset: any) {
     this.postApprovedComments().catch(e => log('warn', 'engage', e.message));
     if (!preset.data.save.autoPicks) return;
     const plan = todaysPlan();
     const more = plan.enabled && plan.entries.some(e => e.status === 'pending');
     if (!more) {
-      await generatePicks(zoned().day, preset);
+      const picks = await generatePicks(zoned().day, preset);
+      queuePicks(preset.data.save.share, (picks.picks ?? []).map((p: any) => ({ video_key: p.video_key, url: p.url, author: p.author, id: p.id })));
       creator.autoCreate(preset);
     }
+    await this.shareQueuedNow(preset).catch(e => log('warn', 'share', e.message));
   }
 
   pause() {

@@ -13,6 +13,7 @@ import { rand, sleep, zoned } from '../time.ts';
 import { storyboard, type Frame } from './storyboard/index.ts';
 import { interestsForPrompt, updateInterests } from './memory.ts';
 import { engage } from './engage.ts';
+import { maybeShare } from './share.ts';
 import { aiSearchAvailable, recordSearch, searchOption, validateQuery } from './search.ts';
 
 export class GuardHit extends Error { kind: string; constructor(kind: string, detail: string) { super(detail); this.kind = kind; } }
@@ -265,6 +266,20 @@ async function handleVideo(host: SessionHost, v: VideoInfo, source: Source, c: C
     try { fs.writeFileSync(path.join(paths.media, `video-${rowId}.jpg`), storyboard(frames).jpeg); } catch { /* not critical */ }
   }
   host.update({ counts: { ...c }, thinking: doSave ? `💾 Saved (score ${score}): ${analysis?.topic ?? decision.reason ?? ''}` : `Watched, not saved (score ${score})` });
+  // Share the saved video to the main account (Save & picks → Share), while it is still in view.
+  const shareCfg = save.share;
+  if (doSave && shareCfg?.enabled && shareCfg.mode !== 'picks') {
+    const now = await tiktok.inspect().catch(() => null);
+    if (now?.video?.key === v.key && !now.guard) {
+      host.update({ thinking: `📤 Sharing to @${shareCfg.to}…` });
+      const res = await maybeShare(tiktok.browser.page!, shareCfg, { videoKey: v.key, url: v.url, author: v.author, videoRow: rowId }, host.sessionId, score, {
+        onBlocked: msg => host.update({ alert: { kind: 'share_blocked', message: msg, at: new Date().toISOString() } }),
+        onGuard: detail => host.needsUser('captcha', detail),
+      });
+      if (res === 'done') host.update({ thinking: `📤 Sent to @${shareCfg.to}` });
+      else if (res === 'pending') host.update({ thinking: `📤 Share to @${shareCfg.to} waits for your approval` });
+    }
+  }
   // Engagement (all off by default) — only on the video still in view.
   const e = host.preset.data.engagement;
   if (e.like.enabled || e.follow.enabled || e.favourite.enabled || e.comment.enabled) {

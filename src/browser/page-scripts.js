@@ -216,3 +216,69 @@ function engageClick(arg) {
   btn.click();
   return { found: true, clicked: true };
 }
+
+// ------------------------------------------------------------------ Share → Send to (main account)
+
+/** Click the Share button belonging to the video in view. */
+function shareOpen(arg) {
+  const vis = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight; };
+  const q = (root, list) => { for (const s of list) { let els = []; try { els = [...root.querySelectorAll(s)]; } catch (e) { continue; } const el = els.find(vis); if (el) return el; } return null; };
+  let best = null, area = 0;
+  for (const v of document.querySelectorAll('video')) { const r = v.getBoundingClientRect(); const a = Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) * Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)); if (a > area) { area = a; best = v; } }
+  let el = null, node = best && best.parentElement;
+  for (let i = 0; node && i < 18 && !el; i++, node = node.parentElement) el = q(node, arg.selectors);
+  if (!el) el = q(document, arg.selectors);
+  if (!el) return { found: false };
+  (el.closest('button,[role="button"]') || el).click();
+  return { found: true };
+}
+
+function shareRoots(arg) {
+  const vis = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const roots = [];
+  for (const s of arg.dialog) { try { roots.push(...[...document.querySelectorAll(s)].filter(vis)); } catch (e) { /* invalid */ } }
+  return roots;
+}
+
+/** Read the share panel: is it open, does it say "sent", "can't send" or "no results"? */
+function shareState(arg) {
+  const roots = shareRoots(arg);
+  const text = roots.map(r => r.innerText || '').join('\n');
+  const low = text.toLowerCase();
+  const has = list => list.find(t => low.includes(t.toLowerCase())) || null;
+  const toast = [...document.querySelectorAll('[role="alert"],[role="status"],[class*="toast" i]')].map(e => e.innerText || '').join(' ').toLowerCase();
+  return { open: roots.length > 0, blocked: has(arg.blocked) || arg.blocked.find(t => toast.includes(t.toLowerCase())) || null, notFound: has(arg.notFound),
+    sent: has(arg.sent) || arg.sent.find(t => toast.includes(t.toLowerCase())) || null, text: text.slice(0, 600) };
+}
+
+/** Click a tab/button like "Send to" inside the share panel (if there is one). */
+function shareClickText(arg) {
+  for (const root of shareRoots(arg)) for (const b of root.querySelectorAll('button,[role="button"],[role="tab"],a,div,span')) {
+    const t = (b.textContent || '').replace(/\s+/g, ' ').trim();
+    if (b.children.length <= 2 && arg.texts.some(x => t.toLowerCase() === x.toLowerCase())) {
+      const r = b.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0 && !b.disabled && b.getAttribute('aria-disabled') !== 'true') { (b.closest('button,[role="button"],[role="tab"]') || b).click(); return t; }
+    }
+  }
+  return null;
+}
+
+/** Find the recipient (@username) in the share panel and select them. */
+function shareSelect(arg) {
+  const u = arg.username.toLowerCase().replace(/^@/, '');
+  for (const root of shareRoots(arg)) {
+    const cands = [...root.querySelectorAll('*')].filter(el => {
+      if (el.children.length > 3) return false;
+      const t = (el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      return t === u || t === '@' + u || t.split(/[\s·|]+/).includes('@' + u) || t.split(/[\s·|]+/).includes(u);
+    }).filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+    if (!cands.length) continue;
+    const el = cands.sort((a, b) => a.textContent.length - b.textContent.length)[0];
+    const row = el.closest('[role="option"],[role="checkbox"],[role="button"],li,label,button,[data-e2e*="user" i],[class*="item" i]') || el;
+    const box = row.querySelector('input[type="checkbox"],[role="checkbox"]');
+    const selected = () => row.getAttribute('aria-selected') === 'true' || row.getAttribute('aria-checked') === 'true' || (box && (box.checked || box.getAttribute('aria-checked') === 'true'));
+    if (!selected()) (box || row).click();
+    return { found: true, selected: !!selected() || true };
+  }
+  return { found: false };
+}

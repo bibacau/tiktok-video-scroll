@@ -31,7 +31,14 @@ export function StatusPage() {
         <button class="btn primary big" onClick=${act('/api/control/resume', 'Resumed')}>I've handled it — Resume</button>
       </section>` : null}
       ${s.alert?.kind === 'profile_busy' ? html`<${ProfileBusy} alert=${s.alert} />` : null}
-      ${s.alert && s.state !== 'needs_user' && s.alert.kind !== 'profile_busy' ? html`<section class="card alertcard soft"><p>⚠️ ${s.alert.message}</p><button class="btn small ghost" onClick=${act('/api/control/dismiss-alert')}>Dismiss</button></section>` : null}
+      ${s.alert?.kind === 'share_blocked' ? html`<section class="card alertcard">
+        <h3>📤 Can't send saved videos to your main account</h3>
+        <p>${s.alert.message}</p>
+        <p class="muted small">Sharing is paused for today so TikTok isn't asked again and again. Saved videos are still saved (and sent to Telegram if you turned that on).</p>
+        <div class="controls"><button class="btn primary" onClick=${act('/api/shares/retry', 'Retrying…')}>I've followed each other — Retry sharing</button>
+          <button class="btn ghost" onClick=${act('/api/control/dismiss-alert')}>Dismiss</button></div>
+      </section>` : null}
+      ${s.alert && s.state !== 'needs_user' && !['profile_busy', 'share_blocked'].includes(s.alert.kind) ? html`<section class="card alertcard soft"><p>⚠️ ${s.alert.message}</p><button class="btn small ghost" onClick=${act('/api/control/dismiss-alert')}>Dismiss</button></section>` : null}
 
       <section class="card">
         <div class="statehead">

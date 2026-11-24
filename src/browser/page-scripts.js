@@ -227,24 +227,22 @@ function engageClick(arg) {
   return { found: true, clicked: true };
 }
 
-// ------------------------------------------------------------------ Share → Send to (main account)
+// ------------------------------------------------------------------ Share (main account)
+// Real TikTok (2026): the share icon is an svg with no text/data-e2e; the panel is
+// <div class="TUXModal" role="dialog"> titled "Share to"; each recipient is <div data-e2e="share-<username>">
+// with a div[tabindex="0"] inside; other entries are share-copy ("Copy"), share-repost, share-whatsapp, ...
 
-/** Remember what the page copies to the clipboard (TikTok's "Copy link"), then click the Copy link entry. */
-function shareCopyLink(arg) {
-  if (!window.__ttaCopyHooked) {
-    window.__ttaCopyHooked = true;
-    try {
-      const orig = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText.bind(navigator.clipboard) : null;
-      if (navigator.clipboard) navigator.clipboard.writeText = t => { window.__ttaCopied = String(t); return orig ? orig(t).catch(() => {}) : Promise.resolve(); };
-    } catch (e) { /* read-only */ }
-    document.addEventListener('copy', e => { const s = String(document.getSelection() || ''); if (s) window.__ttaCopied = s; }, true);
+/** Nearest element that can really be clicked (svg/path icons → their button / tabindex / role parent). */
+function clickableOf(el) {
+  let n = el;
+  for (let i = 0; n && i < 8; i++, n = n.parentElement) {
+    if (n.matches && n.matches('button,a[href],[role="button"],[tabindex]:not([tabindex="-1"]),[onclick]')) return n;
+    if (n instanceof HTMLElement && !(n instanceof SVGElement) && getComputedStyle(n).cursor === 'pointer') return n;
   }
-  if (arg.read) return window.__ttaCopied || null;
-  window.__ttaCopied = null;
-  return shareClickText({ dialog: arg.dialog, texts: arg.texts });
+  return el.closest && el.closest('div,span') || el;
 }
 
-/** Click the Share button belonging to the video in view. */
+/** Click the Share button belonging to the video in view (or the first visible one). */
 function shareOpen(arg) {
   const vis = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight; };
   const q = (root, list) => { for (const s of list) { let els = []; try { els = [...root.querySelectorAll(s)]; } catch (e) { continue; } const el = els.find(vis); if (el) return el; } return null; };
@@ -254,58 +252,102 @@ function shareOpen(arg) {
   for (let i = 0; node && i < 18 && !el; i++, node = node.parentElement) el = q(node, arg.selectors);
   if (!el) el = q(document, arg.selectors);
   if (!el) return { found: false };
-  (el.closest('button,[role="button"]') || el).click();
-  return { found: true };
+  const target = clickableOf(el);
+  target.click();
+  return { found: true, clicked: target.tagName.toLowerCase() + (target.className && typeof target.className === 'string' ? '.' + target.className.split(' ')[0] : '') };
 }
 
 function shareRoots(arg) {
   const vis = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
   const roots = [];
   for (const s of arg.dialog) { try { roots.push(...[...document.querySelectorAll(s)].filter(vis)); } catch (e) { /* invalid */ } }
-  return roots;
+  return roots.filter((r, i) => !roots.some((o, j) => j !== i && o.contains(r) && o !== r));
 }
 
-/** Read the share panel: is it open, does it say "sent", "can't send" or "no results"? */
+/** Panel state: open? "sent"? "can't send"? "no results"? a Send button showing? */
 function shareState(arg) {
   const roots = shareRoots(arg);
   const text = roots.map(r => r.innerText || '').join('\n');
   const low = text.toLowerCase();
-  const has = list => list.find(t => low.includes(t.toLowerCase())) || null;
-  const toast = [...document.querySelectorAll('[role="alert"],[role="status"],[class*="toast" i]')].map(e => e.innerText || '').join(' ').toLowerCase();
-  return { open: roots.length > 0, blocked: has(arg.blocked) || arg.blocked.find(t => toast.includes(t.toLowerCase())) || null, notFound: has(arg.notFound),
-    sent: has(arg.sent) || arg.sent.find(t => toast.includes(t.toLowerCase())) || null, text: text.slice(0, 600) };
+  const has = (list, hay) => (list || []).find(t => hay.includes(t.toLowerCase())) || null;
+  const toasts = [...document.querySelectorAll('[role="alert"],[role="status"],[class*="toast" i],[class*="Toast" i],[class*="snackbar" i]')]
+    .filter(e => e.getBoundingClientRect().height > 0).map(e => e.innerText || '').join(' ').toLowerCase();
+  let sendButton = false;
+  for (const r of roots) for (const b of r.querySelectorAll('button,[role="button"]')) {
+    const t = (b.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if ((arg.send || []).some(x => x.toLowerCase() === t) && b.getBoundingClientRect().height > 0 && !b.disabled) sendButton = true;
+  }
+  let recipientSent = false;
+  if (arg.user) for (const r of roots) for (const s of arg.recipient || []) {
+    let el = null; try { el = r.querySelector(s.replace(/\{user\}/g, arg.user)); } catch (e) { /* invalid */ }
+    if (el && has(arg.sent, (el.innerText || '').toLowerCase())) recipientSent = true;
+  }
+  return { open: roots.length > 0, blocked: has(arg.blocked, low) || has(arg.blocked, toasts), notFound: has(arg.notFound, low),
+    sent: has(arg.sent, toasts) || (recipientSent ? 'shown on the recipient' : null) || (low.split('\n').some(l => (arg.sent || []).some(t => l.trim().toLowerCase() === t.toLowerCase())) ? 'in panel' : null),
+    sendButton, text: text.slice(0, 1500), toast: toasts.slice(0, 300) };
 }
 
-/** Click a tab/button like "Send to" inside the share panel (if there is one). */
+/** Click a button-like element with exactly one of `texts` inside the panel. */
 function shareClickText(arg) {
-  for (const root of shareRoots(arg)) for (const b of root.querySelectorAll('button,[role="button"],[role="tab"],a,div,span')) {
-    const t = (b.textContent || '').replace(/\s+/g, ' ').trim();
-    if (b.children.length <= 2 && arg.texts.some(x => t.toLowerCase() === x.toLowerCase())) {
-      const r = b.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0 && !b.disabled && b.getAttribute('aria-disabled') !== 'true') { (b.closest('button,[role="button"],[role="tab"]') || b).click(); return t; }
+  // Real buttons first, so a wrapper div whose text is also "Send" is never clicked instead of the button.
+  for (const kinds of ['button,[role="button"],[role="tab"],a,[tabindex="0"]', 'div,span,p']) {
+    for (const root of shareRoots(arg)) for (const b of root.querySelectorAll(kinds)) {
+      const t = (b.textContent || '').replace(/\s+/g, ' ').trim();
+      if (b.children.length <= 3 && arg.texts.some(x => t.toLowerCase() === x.toLowerCase())) {
+        const r = b.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0 && !b.disabled && b.getAttribute('aria-disabled') !== 'true') { clickableOf(b).click(); return t; }
+      }
     }
   }
   return null;
 }
 
-/** Find the recipient (@username) in the share panel and select them. */
+/** Click the first visible element (inside the panel) matching a selector list. */
+function shareClickSel(arg) {
+  for (const root of shareRoots(arg)) for (const s of arg.selectors) {
+    let el = null; try { el = [...root.querySelectorAll(s)].find(e => e.getBoundingClientRect().height > 0); } catch (e) { continue; }
+    if (el) { const target = el.querySelector('[tabindex="0"],button,[role="button"]') || clickableOf(el); target.click(); return s; }
+  }
+  return null;
+}
+
+/** Find the recipient: data-e2e="share-<username>" first, then visible text / avatar alt. Clicks it. */
 function shareSelect(arg) {
   const u = arg.username.toLowerCase().replace(/^@/, '');
   for (const root of shareRoots(arg)) {
-    const cands = [...root.querySelectorAll('*')].filter(el => {
-      if (el.children.length > 3) return false;
+    for (const s of arg.recipient || []) {
+      let el = null; try { el = [...root.querySelectorAll(s.replace(/\{user\}/g, u))].find(e => e.getBoundingClientRect().height > 0); } catch (e) { continue; }
+      if (el) { (el.querySelector('[tabindex="0"]') || el.querySelector('button,[role="button"]') || clickableOf(el)).click(); return { found: true, how: `matched ${s.replace(/\{user\}/g, u)}` }; }
+    }
+    const cands = [...root.querySelectorAll('p,span,div,img')].filter(el => {
+      if (el.tagName === 'IMG') return (el.getAttribute('alt') || '').toLowerCase() === u;
+      if (el.children.length > 2) return false;
       const t = (el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-      return t === u || t === '@' + u || t.split(/[\s·|]+/).includes('@' + u) || t.split(/[\s·|]+/).includes(u);
-    }).filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
-    if (!cands.length) continue;
-    const el = cands.sort((a, b) => a.textContent.length - b.textContent.length)[0];
-    const row = el.closest('[role="option"],[role="checkbox"],[role="button"],li,label,button,[data-e2e*="user" i],[class*="item" i]') || el;
-    const box = row.querySelector('input[type="checkbox"],[role="checkbox"]');
-    const selected = () => row.getAttribute('aria-selected') === 'true' || row.getAttribute('aria-checked') === 'true' || (box && (box.checked || box.getAttribute('aria-checked') === 'true'));
-    if (!selected()) (box || row).click();
-    return { found: true, selected: !!selected() || true };
+      return t === u || t === '@' + u;
+    }).filter(el => el.getBoundingClientRect().height > 0);
+    if (cands.length) {
+      const el = cands[0];
+      const row = el.closest('[data-e2e^="share-"]') || el.closest('[role="option"],[role="checkbox"],li,label') || el;
+      (row.querySelector('[tabindex="0"]') || clickableOf(row)).click();
+      return { found: true, how: 'matched by name' };
+    }
   }
   return { found: false };
+}
+
+/** Remember what the page copies (TikTok's "Copy"), then click the copy entry. */
+function shareCopyLink(arg) {
+  if (!window.__ttaCopyHooked) {
+    window.__ttaCopyHooked = true;
+    try {
+      const orig = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText.bind(navigator.clipboard) : null;
+      if (navigator.clipboard) navigator.clipboard.writeText = t => { window.__ttaCopied = String(t); return orig ? orig(t).catch(() => {}) : Promise.resolve(); };
+    } catch (e) { /* read-only */ }
+    document.addEventListener('copy', () => { const s = String(document.getSelection() || ''); if (s) window.__ttaCopied = s; }, true);
+  }
+  if (arg.read) return window.__ttaCopied || null;
+  window.__ttaCopied = null;
+  return shareClickSel({ dialog: arg.dialog, selectors: arg.copy || [] }) || shareClickText({ dialog: arg.dialog, texts: arg.texts });
 }
 
 // ------------------------------------------------------------------ Messages (private chats)

@@ -10,6 +10,7 @@ import { paths } from '../paths.ts';
 import { runScript } from '../browser/edge.ts';
 import { selectors } from '../browser/tiktok.ts';
 import { getAppSettings } from '../settings/store.ts';
+import { until, captureDebug } from '../browser/wait.ts';
 import { sendTelegram, telegramConfigured } from '../notify.ts';
 import { zoned } from '../time.ts';
 
@@ -52,90 +53,91 @@ async function telegramCopy(cfg: any, t: ShareTarget, failed: boolean): Promise<
 }
 
 /**
- * Run Share → (Copy link) → Send to → recipient → Send on the page that shows the video, recording every
- * step. With `debug`, a failing step also saves a screenshot and the visible share-panel text.
+ * Run Share → (Copy) → recipient → (Send) on the page that shows the video, recording every step and
+ * WAITING for each element (up to ~10 s) instead of looking once. A failing step always saves a
+ * screenshot and the share panel's text.
  */
 export async function shareOnPage(page: Page, to: string, opts: { wantLink?: boolean; debug?: boolean } = {}): Promise<ShareRun> {
   const sel = selectors();
   const steps: Step[] = [];
-  const st = () => runScript<any>(page, 'shareState', { dialog: sel.shareDialog, blocked: sel.shareBlockedTexts, notFound: sel.shareNotFoundTexts, sent: sel.shareSentTexts });
+  const user = to.toLowerCase().replace(/^@/, '');
+  const stArg = { dialog: sel.shareDialog, blocked: sel.shareBlockedTexts, notFound: sel.shareNotFoundTexts, sent: sel.shareSentTexts, send: sel.shareSendTexts, recipient: sel.shareRecipient, user };
+  const st = () => runScript<any>(page, 'shareState', stArg);
   const fail = async (step: string, kind: ShareRun['kind'], message: string): Promise<ShareRun> => {
     steps.push({ step, ok: false, detail: message });
-    const out: ShareRun = { ok: false, kind, message, steps };
-    if (opts.debug) {
-      try {
-        const file = path.join(paths.media, `share-debug-${Date.now()}.jpg`);
-        fs.writeFileSync(file, await page.screenshot({ type: 'jpeg', quality: 70 }));
-        out.screenshot = `/media/${path.basename(file)}`;
-      } catch { /* screenshot is best effort */ }
-      out.panelText = (await st().catch(() => ({ text: '' }))).text;
-    }
+    const dbg = await captureDebug(page, 'share', sel.shareDialog);
+    const panel = await st().catch(() => null);
     await page.keyboard.press('Escape').catch(() => {});
-    return out;
+    return { ok: false, kind, message, steps, screenshot: dbg.screenshot, panelText: panel?.open ? panel.text : dbg.pageText };
   };
-  const openPanel = async () => {
-    const o = await runScript<any>(page, 'shareOpen', { selectors: sel.shareButton });
-    if (!o.found) return false;
-    await sleep(900 + Math.random() * 600);
-    return (await st()).open;
+  const openPanel = async (): Promise<string | null> => {
+    const btn = await until(async () => { const o = await runScript<any>(page, 'shareOpen', { selectors: sel.shareButton }); return o.found ? o : null; });
+    if (!btn) return null;
+    const open = await until(async () => (await st()).open);
+    return open ? btn.clicked : '';
   };
   const guard = (await runScript<any>(page, 'inspect', sel).catch(() => null))?.guard;
   if (guard) return fail('page check', 'guard', guard.detail);
-  const found = await runScript<any>(page, 'shareOpen', { selectors: sel.shareButton });
-  if (!found.found) return fail('share button found', 'ui', 'Share button not found (Settings → TikTok page selectors: shareButton)');
-  steps.push({ step: 'share button found', ok: true });
-  await sleep(900 + Math.random() * 600);
-  if (!(await st()).open) return fail('panel opened', 'ui', 'The share panel did not open (shareDialog selectors)');
+  const btn = await until(async () => { const o = await runScript<any>(page, 'shareOpen', { selectors: sel.shareButton }); return o.found ? o : null; });
+  if (!btn) return fail('share button found', 'ui', 'Share button not found within 10 s (Settings → TikTok page selectors: shareButton)');
+  steps.push({ step: 'share button found', ok: true, detail: `clicked ${btn.clicked}` });
+  if (!(await until(async () => (await st()).open))) return fail('panel opened', 'ui', 'The share panel did not appear within 10 s (shareDialog selectors)');
   steps.push({ step: 'panel opened', ok: true });
   let url: string | null = null;
-  if (opts.wantLink) { // the link wasn't readable from the feed: use the panel's "Copy link"
-    if (await runScript(page, 'shareCopyLink', { dialog: sel.shareDialog, texts: sel.shareCopyLinkTexts })) {
-      await sleep(600);
-      url = await runScript<string | null>(page, 'shareCopyLink', { read: true });
+  if (opts.wantLink) { // link wasn't readable from the feed: use the panel's "Copy" entry
+    if (await until(() => runScript(page, 'shareCopyLink', { dialog: sel.shareDialog, copy: sel.shareCopy, texts: sel.shareCopyLinkTexts }), 5000)) {
+      url = await until(() => runScript<string | null>(page, 'shareCopyLink', { read: true }), 3000);
     }
     steps.push({ step: 'copy link', ok: !!url, detail: url ?? 'no link copied' });
-    if (!(await st()).open && !(await openPanel())) return fail('panel opened again', 'ui', 'The share panel closed after Copy link and did not reopen');
+    if (!(await st()).open && (await openPanel()) === null) return fail('panel opened again', 'ui', 'The share panel closed after Copy and did not reopen');
   }
-  const sendTo = await runScript(page, 'shareClickText', { dialog: sel.shareDialog, texts: sel.shareSendToTexts.filter(t => !sel.shareSendTexts.includes(t)) });
-  steps.push({ step: '"Send to" found', ok: true, detail: sendTo ? `clicked "${sendTo}"` : 'no separate "Send to" button (list shown directly)' });
-  await sleep(700);
-  let pick = await runScript<any>(page, 'shareSelect', { dialog: sel.shareDialog, username: to });
-  let how = 'in the recent list';
-  if (!pick.found) {
-    let box = null;
-    for (const d of sel.shareDialog) for (const s of sel.shareSearch) {
-      const l = page.locator(`${d} ${s}`).first();
-      if (!box && await l.isVisible().catch(() => false)) box = l;
-    }
+  // Optional "Send to" tab/button (not on today's TikTok panel, kept for other layouts)
+  const sendTo = await runScript(page, 'shareClickText', { dialog: sel.shareDialog, texts: sel.shareSendToTexts });
+  if (sendTo) steps.push({ step: '"Send to" opened', ok: true, detail: `clicked "${sendTo}"` });
+  // Recipient: wait for the recent list, then fall back to the panel's search
+  let pick = await until(async () => { const p = await runScript<any>(page, 'shareSelect', { dialog: sel.shareDialog, recipient: sel.shareRecipient, username: user }); return p.found ? p : null; }, 6000);
+  let how = pick ? `${pick.how} (recent list)` : '';
+  if (!pick) {
+    const findBox = async () => {
+      for (const d of sel.shareDialog) for (const s of sel.shareSearch) {
+        const l = page.locator(`${d} ${s}`).first();
+        if (await l.isVisible().catch(() => false)) return l;
+      }
+      return null;
+    };
+    let box = await findBox();
+    if (!box) { await runScript(page, 'shareClickSel', { dialog: sel.shareDialog, selectors: sel.shareSearchOpen }); box = await until(findBox, 6000); }
     if (box) {
       await box.click();
-      for (const ch of to) { await page.keyboard.type(ch); await sleep(70 + Math.random() * 140); }
-      await sleep(1800);
-      pick = await runScript<any>(page, 'shareSelect', { dialog: sel.shareDialog, username: to });
-      how = 'typed into the panel search';
-    } else how = 'no search box in the panel';
+      for (const ch of user) { await page.keyboard.type(ch); await sleep(70 + Math.random() * 140); }
+      pick = await until(async () => { const p = await runScript<any>(page, 'shareSelect', { dialog: sel.shareDialog, recipient: sel.shareRecipient, username: user }); return p.found ? p : null; }, 10_000);
+      how = pick ? `${pick.how} (typed into the panel search)` : '';
+    }
   }
-  if (!pick.found) {
+  if (!pick) {
     const s = await st();
     return s.blocked ? fail('recipient found', 'blocked', explain('blocked', to)) : fail('recipient found', 'not_found', explain('not_found', to));
   }
-  steps.push({ step: 'recipient found', ok: true, detail: `@${to} ${how}` });
-  await sleep(500 + Math.random() * 500);
-  if ((await st()).blocked) return fail('recipient allowed', 'blocked', explain('blocked', to));
-  const clicked = await runScript(page, 'shareClickText', { dialog: sel.shareDialog, texts: sel.shareSendTexts });
-  if (!clicked) return fail('Send clicked', 'ui', 'The Send button was not found or is disabled (shareSendTexts)');
-  steps.push({ step: 'Send clicked', ok: true });
-  for (let i = 0; i < 12; i++) {
-    await sleep(400);
-    const s = await st();
-    if (s.blocked) return fail('confirmed', 'blocked', explain('blocked', to));
-    if (s.sent || !s.open) {
-      if (s.open) await page.keyboard.press('Escape').catch(() => {});
-      steps.push({ step: 'confirmed', ok: true, detail: s.sent ? `"${s.sent}" shown` : 'panel closed after Send' });
-      return { ok: true, steps, url };
-    }
+  steps.push({ step: 'recipient found', ok: true, detail: `@${user} — ${how}, clicked` });
+  // Either TikTok sends right away, or a Send/confirm button appears after picking. Wait for whichever comes.
+  const first = await until(async () => { const s = await st(); return s.blocked || s.sent || !s.open || s.sendButton ? s : null; }, 10_000);
+  if (!first) return fail('confirmed', 'ui', 'Nothing happened within 10 s after picking the recipient (no "Sent", no Send button, panel still open)');
+  if (first.blocked) return fail('recipient allowed', 'blocked', explain('blocked', to));
+  let path = 'sent on click';
+  let done = first;
+  if (!first.sent && first.open && first.sendButton) {
+    path = 'Send button after picking';
+    await sleep(300 + Math.random() * 400);
+    await runScript(page, 'shareClickText', { dialog: sel.shareDialog, texts: sel.shareSendTexts });
+    steps.push({ step: 'Send clicked', ok: true });
+    const after = await until(async () => { const s = await st(); return s.blocked || s.sent || !s.open ? s : null; }, 10_000);
+    if (!after) return fail('confirmed', 'ui', 'No confirmation within 10 s after pressing Send (shareSentTexts)');
+    if (after.blocked) return fail('confirmed', 'blocked', explain('blocked', to));
+    done = after;
   }
-  return fail('confirmed', 'ui', 'No confirmation after pressing Send (shareSentTexts)');
+  if ((await st().catch(() => ({ open: false }))).open) await page.keyboard.press('Escape').catch(() => {});
+  steps.push({ step: 'confirmed', ok: true, detail: `${path}: ${done.sent ? `"Sent" ${done.sent}` : 'panel closed'}` });
+  return { ok: true, steps, url };
 }
 
 type Hooks = { onBlocked?: (msg: string) => void; onGuard?: (detail: string) => Promise<void> };
@@ -204,7 +206,7 @@ export async function shareQueued(page: Page, cfg: any, hooks: Hooks = {}) {
     if (sharingPaused()) break;
     if (alreadySent(row.video_key, row.recipient)) { setStatus(row.id, 'skipped', 'skipped: duplicate (already sent)'); continue; } // final check: never twice
     if (!row.video_url) { setStatus(row.id, 'failed', 'No video link to open'); continue; }
-    try { await page.goto(row.video_url, { waitUntil: 'domcontentloaded', timeout: 45_000 }); await sleep(2500); } catch (e: any) { setStatus(row.id, 'failed', `Could not open the video page: ${e.message}`); continue; }
+    try { await page.goto(row.video_url, { waitUntil: 'domcontentloaded', timeout: 45_000 }); await sleep(500); } catch (e: any) { setStatus(row.id, 'failed', `Could not open the video page: ${e.message}`); continue; }
     setStatus(row.id, 'sending');
     if (await runShare(page, { ...cfg, to: row.recipient }, { videoKey: row.video_key, url: row.video_url, author: row.author }, row.id, hooks) === 'done') n++;
     await sleep(3000 + Math.random() * 4000);
@@ -256,8 +258,7 @@ export async function testShare(page: Page, cfg: any, videoUrl?: string): Promis
     ?? (getDb().prepare("SELECT video_url url FROM shares WHERE video_url LIKE '%/video/%' ORDER BY id DESC LIMIT 1").get() as any)?.url ?? null;
   if (!url) throw Object.assign(new Error('No saved video with a link yet — run a watching session first'), { statusCode: 400 });
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-  await sleep(2500);
-  const r = await shareOnPage(page, to, { debug: true });
+  const r = await shareOnPage(page, to, { debug: true }); // waits for the share button itself
   const key = url.match(/\/video\/(\d+)/)?.[1] ?? url;
   insert({ videoKey: key, url }, cfg, r.ok ? 'done' : 'failed', null, r.ok ? null : `Test: ${r.message}`, 'test');
   log(r.ok ? 'info' : 'warn', 'share', `Test share to @${to}: ${r.ok ? 'sent' : r.message}`);

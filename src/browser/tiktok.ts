@@ -19,7 +19,11 @@ export interface Inspection { url: string; guard: { kind: 'captcha' | 'login'; d
 export const selectors = (): typeof DEFAULT_SELECTORS => {
   const custom = getAppSettings().selectors;
   const out: any = { ...DEFAULT_SELECTORS };
-  if (custom && typeof custom === 'object') for (const [k, v] of Object.entries(custom)) if (Array.isArray(v) && v.every(x => typeof x === 'string')) out[k] = v;
+  // Your saved selectors are tried first; built-in ones are added after them, so new defaults from an
+  // update still apply even when your saved copy (from an older version) already has that key.
+  if (custom && typeof custom === 'object') for (const [k, v] of Object.entries(custom)) {
+    if (Array.isArray(v) && v.every(x => typeof x === 'string')) out[k] = [...new Set([...v, ...((DEFAULT_SELECTORS as any)[k] ?? [])])];
+  }
   return out;
 };
 

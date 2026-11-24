@@ -125,11 +125,14 @@ test('"Test share now" reports every step; a failing step saves a screenshot and
   const page = await m.controller.browser.ensure();
   const ok = await m.share.testShare(page, { to: 'bibacau' }, `${tt.url}/@rotiman/video/7400000000000000006`);
   assert.equal(ok.ok, true);
-  assert.deepEqual(ok.steps.map((s: any) => s.step), ['share button found', 'panel opened', '"Send to" found', 'recipient found', 'Send clicked', 'confirmed']);
-  assert.match(ok.steps[3].detail, /typed into the panel search/);
+  assert.deepEqual(ok.steps.map((s: any) => s.step), ['share button found', 'panel opened', 'recipient found', 'confirmed']);
+  assert.match(ok.steps[0].detail, /clicked div\.DivShareWrapper/, 'svg path icon → its clickable parent');
+  assert.match(ok.steps[2].detail, /share-bibacau.*typed into the panel search/);
+  assert.match(ok.steps[3].detail, /sent on click/);
   const bad = await m.share.testShare(page, { to: 'nobody_here' }, `${tt.url}/@rotiman/video/7400000000000000006`);
   assert.equal(bad.ok, false);
   assert.equal(bad.steps.at(-1).step, 'recipient found');
+  assert.match(bad.message, /follow/);
   assert.ok(bad.screenshot && fs.existsSync(path.join(process.env.DATA_DIR!, 'media', path.basename(bad.screenshot))));
   assert.match(bad.panelText, /Send|Share to/);
   await m.controller.browser.close();
@@ -155,4 +158,21 @@ test('History → Sessions numbers update while the session runs, and after a cr
   assert.equal(s.status, 'interrupted');
   assert.equal(s.videos, 5); assert.equal(s.saved, 2);
   assert.ok(s.watched_seconds >= 60 && s.watched_seconds <= 600);
+});
+
+test('real panel shapes: slow panel (waits instead of looking once) and "Send button after picking"', { skip: !BROWSER && 'no browser', timeout: 180_000 }, async () => {
+  shareOpts.slowMs = 2500; shareOpts.mode = 'confirm';
+  await site({});
+  const page = await m.controller.browser.ensure();
+  const r = await m.share.testShare(page, { to: 'bibacau' }, `${tt.url}/@laksalady/video/7400000000000000008`);
+  assert.equal(r.ok, true, JSON.stringify(r.steps));
+  assert.deepEqual(r.steps.map((s: any) => s.step), ['share button found', 'panel opened', 'recipient found', 'Send clicked', 'confirmed']);
+  assert.match(r.steps.at(-1).detail, /Send button after picking/);
+  // not allowed to message → toast → explained
+  shareOpts.slowMs = 0; shareOpts.mode = 'instant'; shareOpts.notMutual = true;
+  await site({});
+  const b = await m.share.testShare(page, { to: 'bibacau' }, `${tt.url}/@laksalady/video/7400000000000000008`);
+  assert.equal(b.ok, false); assert.equal(b.kind, 'blocked');
+  shareOpts.notMutual = false;
+  await m.controller.browser.close();
 });

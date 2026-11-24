@@ -37,7 +37,7 @@ const item = (v: typeof VIDEOS[number], i: number) => `
     __LINK_${v.id}_${v.user}__
     <button data-e2e="like-icon" aria-pressed="false" onclick="this.setAttribute('aria-pressed','true');fetch('/engage?kind=like&id=${v.id}')">♥</button>
     <button data-e2e="favorite-icon" aria-pressed="false" onclick="this.setAttribute('aria-pressed','true');fetch('/engage?kind=favourite&id=${v.id}')">🔖</button>
-    <button data-e2e="share-icon" onclick="openShare('${v.id}','${v.user}')">Share</button>
+    ${shareIcon(`openShare('${v.id}','${v.user}')`)}
     <button data-e2e="feed-follow" onclick="this.textContent='Following';fetch('/engage?kind=follow&id=${v.user}')">Follow</button>
   </div>
 </article>`;
@@ -80,35 +80,54 @@ function messagesPage(current: string | null) {
   </body></html>`;
 }
 /** Share panel like TikTok's: Share → Send to → recent contact list (1 shown) + search box → Send. */
-export const shareOpts = { recipients: ['kawan1', 'bibacau', 'kawan2'], notMutual: false };
+/** Share panel built like TikTok's real one (2026): TUXModal "Share to", recipients as data-e2e="share-<user>",
+ *  "Copy" entry, search icon in the nav bar. mode 'instant' = sends on click; 'confirm' = a Send button appears.
+ *  slowMs delays the panel and each reaction (to test waiting instead of looking once). */
+export const shareOpts = { recipients: ['kawan1', 'bibacau', 'kawan2'], notMutual: false, mode: 'instant' as 'instant' | 'confirm', slowMs: 0 };
+export const SHARE_PATH = 'M23.82 3.5A2 2 0 0 0 20.5 5v10.06c-7.2.6-12.5 4.9-14 13.1';
+export const shareIcon = (call: string) => `<div class="DivShareWrapper" tabindex="0" style="cursor:pointer;width:40px;height:40px" onclick="${call}"><svg width="32" height="32" viewBox="0 0 48 48"><path d="${SHARE_PATH}"></path></svg></div>`;
 const SHARE_UI = () => `
-<div role="dialog" id="sharebox" style="display:none;position:fixed;top:15%;left:30%;background:#fff;border:2px solid #333;z-index:20;padding:10px;width:320px">
-  <div>Share to</div><button id="copylink">Copy link</button><button id="sendto">Send to</button>
-  <div id="friends" style="display:none"><input placeholder="Search" id="fs"><div id="flist"></div><div id="fmsg"></div><button id="fsend" disabled>Send</button></div>
+<div class="TUXModal" role="dialog" id="sharebox" style="display:none;position:fixed;top:12%;left:28%;background:#fff;border:2px solid #333;z-index:20;padding:10px;width:340px">
+  <div class="TUXModalNavBar"><button id="sbtn" aria-label=""><svg width="16" height="16"><circle cx="8" cy="8" r="6"></circle></svg></button><div class="TUXModalNavBar-title">Share to</div></div>
+  <input placeholder="Search" id="fs" style="display:none">
+  <div id="flist"></div>
+  <div id="fmsg"></div>
+  <div id="confirmbox" style="display:none"><input placeholder="Add a message"><button id="fsend">Send</button></div>
 </div>
+<div role="alert" id="toast" style="display:none;position:fixed;bottom:10px;left:40%;background:#000;color:#fff;padding:6px"></div>
 <script>
 (() => {
-  const RECIP = ${JSON.stringify(shareOpts.recipients)}, NOT_MUTUAL = ${shareOpts.notMutual};
-  let shareId = null, chosen = null;
-  const reset = () => { sharebox.style.display = 'none'; friends.style.display = 'none'; fs.value = ''; chosen = null; fsend.disabled = true; fmsg.textContent = ''; };
-  let shareUser = '';
-  window.openShare = (id, user) => { reset(); shareId = id; shareUser = user || 'someone'; sharebox.style.display = 'block'; };
-  copylink.onclick = () => { navigator.clipboard.writeText(location.origin + '/@' + shareUser + '/video/' + shareId).catch(() => {}); reset(); };
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') reset(); }, true);
+  const RECIP = ${JSON.stringify(shareOpts.recipients)}, NOT_MUTUAL = ${shareOpts.notMutual}, MODE = ${JSON.stringify(shareOpts.mode)}, SLOW = ${shareOpts.slowMs};
+  let shareId = null, shareUser = '', chosen = null;
+  const later = fn => setTimeout(fn, SLOW);
+  const toast = t => { toastEl.textContent = t; toastEl.style.display = 'block'; setTimeout(() => toastEl.style.display = 'none', 3000); };
+  const toastEl = document.getElementById('toast');
+  const reset = () => { sharebox.style.display = 'none'; fs.style.display = 'none'; fs.value = ''; chosen = null; confirmbox.style.display = 'none'; fmsg.textContent = ''; flist.innerHTML = ''; };
+  const entry = (key, label) => '<div data-e2e="share-' + key + '"><div tabindex="0" class="DivAction" style="cursor:pointer;padding:4px"><img alt="' + label + '" width="20" height="20"><p>' + label + '</p></div></div>';
   const render = q => {
-    const list = RECIP.filter(r => !q || r.includes(q.toLowerCase())).slice(0, q ? 10 : 1);
-    flist.innerHTML = list.map(r => '<div role="option" aria-selected="false" data-u="' + r + '" style="padding:4px"><span>' + r + '</span> <small>@' + r + '</small></div>').join('');
-    fmsg.textContent = q && !list.length ? 'No results' : '';
-    flist.querySelectorAll('[role=option]').forEach(o => o.onclick = () => { o.setAttribute('aria-selected', 'true'); chosen = o.dataset.u; fsend.disabled = false; });
+    const people = RECIP.filter(r => !q || r.includes(q.toLowerCase())).slice(0, q ? 10 : 1); // recent list shows 1
+    flist.innerHTML = people.map(r => entry(r, r)).join('') + (q ? '' : entry('repost', 'Repost') + entry('copy', 'Copy') + entry('whatsapp', 'WhatsApp'));
+    fmsg.textContent = q && !people.length ? 'No results' : '';
+    flist.querySelectorAll('[data-e2e^="share-"] [tabindex="0"]').forEach(el => el.onclick = () => pick(el.parentElement.getAttribute('data-e2e').slice(6), el));
   };
-  sendto.onclick = () => { friends.style.display = 'block'; render(''); };
+  const send = async (who, el) => {
+    if (NOT_MUTUAL) { later(() => toast("You can't send messages to this account")); return; }
+    await fetch('/share?id=' + shareId + '&to=' + who);
+    later(() => { if (el) el.querySelector('p').textContent = 'Sent'; toast('Sent'); });
+  };
+  const pick = (key, el) => {
+    if (key === 'copy') { navigator.clipboard.writeText(location.origin + '/@' + shareUser + '/video/' + shareId).catch(() => {}); reset(); toast('Copied'); return; }
+    if (key === 'repost' || key === 'whatsapp') return;
+    chosen = key;
+    if (MODE === 'confirm') later(() => { confirmbox.style.display = 'block'; });
+    else send(key, el);
+  };
+  window.openShare = (id, user) => { reset(); shareId = id; shareUser = user || 'someone'; later(() => { sharebox.style.display = 'block'; later(() => render('')); }); };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') reset(); }, true);
+  sbtn.onclick = () => later(() => { fs.style.display = 'block'; });
   fs.addEventListener('keydown', e => e.stopPropagation());
-  fs.oninput = () => render(fs.value);
-  fsend.onclick = async () => {
-    if (NOT_MUTUAL) { fmsg.textContent = "You can't send messages to this account"; return; }
-    await fetch('/share?id=' + shareId + '&to=' + chosen);
-    fmsg.textContent = 'Sent'; setTimeout(reset, 700);
-  };
+  fs.oninput = () => later(() => render(fs.value));
+  fsend.onclick = async () => { await send(chosen, null); later(reset); };
 })();
 </script>`;
 export const commentsPosted: Array<{ video: string; text: string }> = [];
@@ -150,7 +169,7 @@ export function startFakeTikTok(port = 0, opts: { captchaAfter?: number; noSearc
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(`<!doctype html><body><video src="/clip0.webm" muted autoplay loop style="height:400px"></video><div data-e2e="browse-video-desc">video ${vid[1]}</div>
         <div id="list"></div><div data-e2e="comment-input"><div contenteditable="true" role="textbox" id="ci" style="min-height:30px;border:1px solid #ccc"></div></div>
-        <button data-e2e="browse-share-icon" onclick="openShare('${vid[1]}')">Share</button>${SHARE_UI()}
+        ${shareIcon(`openShare('${vid[1]}','${u.pathname.split('/')[1].slice(1)}')`)}${SHARE_UI()}
         <button data-e2e="comment-post" onclick="fetch(location.pathname,{method:'POST',body:ci.innerText}).then(()=>{const d=document.createElement('p');d.textContent=ci.innerText;list.appendChild(d);ci.textContent='';})">Post</button></body>`);
       return;
     }

@@ -65,11 +65,12 @@ export const sharesSeen: Array<{ id: string; to: string }> = [];
 /** Fake TikTok Messages inbox. */
 export const inbox: { convs: Array<{ user: string; name: string; unread: boolean; messages: Array<{ mine: boolean; text: string }> }> } = { convs: [] };
 export const dmSent: Array<{ to: string; text: string; keys: number }> = [];
+export const inboxOpts = { slowMs: 0 };
 const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 function messagesPage(current: string | null) {
   const c = inbox.convs.find(x => x.user === current);
   if (c) c.unread = false;
-  return `<!doctype html><html><head><meta charset="utf-8"></head><body>
+  return `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root" style="display:${inboxOpts.slowMs ? 'none' : 'block'}">
   <div id="list" data-e2e="chat-list">${inbox.convs.map(x => `<div data-e2e="chat-list-item" style="padding:6px;cursor:pointer" onclick="location.href='/messages?c=${x.user}'"><p data-e2e="chat-list-item-name">${escHtml(x.name)}</p>${x.unread ? '<span data-e2e="chat-list-item-unread">1</span>' : ''}</div>`).join('')}</div>
   ${c ? `<div id="chat"><div data-e2e="chat-header"><a href="/@${c.user}">${escHtml(c.name)}</a></div>
     ${c.messages.map(m => `<div data-e2e="chat-item">${m.mine ? '<span data-e2e="chat-item-mine"></span>' : ''}<p data-e2e="chat-item-text">${escHtml(m.text)}</p></div>`).join('')}
@@ -77,7 +78,7 @@ function messagesPage(current: string | null) {
     <button data-e2e="message-send" id="ms">Send</button></div>
   <script>let keys = 0; mi.addEventListener('keydown', e => { if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) keys++; });
     ms.onclick = () => fetch('/dm?to=${c.user}&keys=' + keys, { method: 'POST', body: mi.innerText }).then(() => location.reload());</script>` : ''}
-  </body></html>`;
+  </div><script>setTimeout(() => { root.style.display = 'block'; }, ${inboxOpts.slowMs});</script></body></html>`;
 }
 /** Share panel like TikTok's: Share → Send to → recent contact list (1 shown) + search box → Send. */
 /** Share panel built like TikTok's real one (2026): TUXModal "Share to", recipients as data-e2e="share-<user>",

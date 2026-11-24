@@ -13,6 +13,7 @@ import { chatJson } from '../llm/client.ts';
 import { getPrompt, render } from '../settings/prompts.ts';
 import { getAppSettings, getMemory } from '../settings/store.ts';
 import { zoned } from '../time.ts';
+import { until, captureDebug } from '../browser/wait.ts';
 
 export interface ChatMessage { mine: boolean; text: string }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -65,9 +66,11 @@ export class StepError extends Error { step: string; constructor(step: string, m
 /** Type the reply into the open chat like a person, send it and check it appeared. */
 async function typeAndSend(page: Page, text: string) {
   const sel = selectors();
-  let input = null;
-  for (const s of sel.msgInput) { const l = page.locator(s).first(); if (await l.isVisible().catch(() => false)) { input = l; break; } }
-  if (!input) throw new StepError('message box', 'The message box was not found (msgInput selectors)');
+  const input = await until(async () => {
+    for (const s of sel.msgInput) { const l = page.locator(s).first(); if (await l.isVisible().catch(() => false)) return l; }
+    return null;
+  });
+  if (!input) throw new StepError('message box', 'The message box did not appear within 10 s (msgInput selectors)');
   await input.click();
   await sleep(300 + Math.random() * 400);
   for (const ch of text) { await page.keyboard.type(ch); await sleep(40 + Math.random() * 110); }
@@ -75,21 +78,48 @@ async function typeAndSend(page: Page, text: string) {
   let sent = false;
   for (const s of sel.msgSend) { const l = page.locator(s).first(); if (await l.isVisible().catch(() => false)) { await l.click().catch(() => {}); sent = true; break; } }
   if (!sent) await page.keyboard.press('Enter');
-  for (let i = 0; i < 10; i++) {
-    await sleep(500);
+  const appeared = await until(async () => {
     const chat = await runScript<any>(page, 'msgChat', sel).catch(() => null);
     const last = [...(chat?.messages ?? [])].reverse().find((m: ChatMessage) => m.mine);
-    if (last && last.text.includes(text.slice(0, 20))) return;
-  }
-  throw new StepError('sent check', 'The reply did not appear in the chat after sending');
+    return !!last && last.text.includes(text.slice(0, 20));
+  });
+  if (!appeared) throw new StepError('reply appeared', 'The reply did not appear in the chat within 10 s after sending');
 }
 
+const pageLoaded = (page: Page, sel: any) => page.evaluate(`(${JSON.stringify(sel.msgPage)}).some(s => { try { return [...document.querySelectorAll(s)].some(e => e.getBoundingClientRect().height > 0); } catch (e) { return false; } })`).catch(() => false);
+
+/** Open Messages and WAIT for it (up to ~10 s); login / captcha screens stop here. */
 async function openMessages(page: Page) {
-  const b = getAppSettings().browser;
+  const b = getAppSettings().browser, sel = selectors();
   await page.goto(b.baseUrl.replace(/\/+$/, '') + b.messagesPath, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-  await sleep(2500);
-  const guard = (await runScript<any>(page, 'inspect', selectors()).catch(() => null))?.guard;
-  if (guard || /\/login/.test(page.url())) throw new StepError('open Messages', guard ? `${guard.detail} — handle it in the Edge window yourself` : 'Not logged in on this account — press Log in');
+  const state = await until(async () => {
+    const guard = (await runScript<any>(page, 'inspect', sel).catch(() => null))?.guard;
+    if (guard) return { guard: guard.detail };
+    if (/\/login/.test(page.url())) return { guard: 'Not logged in on this account — press Log in' };
+    return (await pageLoaded(page, sel)) ? { ok: true } : null;
+  });
+  if (state?.guard) throw new StepError('open Messages', `${state.guard} — handle it in the Edge window yourself`);
+  if (!state) throw new StepError('read conversations', 'The Messages page did not load as expected within 10 s (msgPage selectors) — is the address in Settings → Browser → Messages page right?');
+}
+
+/** Conversation list; waits for it to fill (an empty inbox is not an error). */
+async function readList(page: Page, sel: any): Promise<any[]> {
+  const list = await until(async () => { const l = await runScript<any[]>(page, 'msgList', sel).catch(() => null); return l && l.length ? l : null; }, 10_000);
+  return list ?? [];
+}
+
+/** Click conversation `index` and WAIT until its chat (header or messages) is shown. */
+async function openChat(page: Page, sel: any, index: number, name: string) {
+  const before = await runScript<any>(page, 'msgChat', sel).catch(() => null);
+  if (!(await runScript(page, 'msgOpen', { sel, index }))) throw new StepError('open conversation', `Could not click the chat with ${name}`);
+  const chat = await until(async () => {
+    const c = await runScript<any>(page, 'msgChat', sel).catch(() => null);
+    if (!c || !c.messages.length) return null;
+    const changed = !before || before.username !== c.username || JSON.stringify(before.messages.slice(-2)) !== JSON.stringify(c.messages.slice(-2));
+    return changed || !before?.messages?.length ? c : null;
+  });
+  if (!chat) throw new StepError('read chat', `The chat with ${name} did not show any messages within 10 s (msgItem / msgMine / msgText selectors)`);
+  return chat;
 }
 
 async function isFriend(page: Page, username: string): Promise<boolean> {
@@ -99,12 +129,13 @@ async function isFriend(page: Page, username: string): Promise<boolean> {
   const sel = selectors(), b = getAppSettings().browser;
   const back = page.url();
   await page.goto(`${b.baseUrl.replace(/\/+$/, '')}/@${encodeURIComponent(username)}`, { waitUntil: 'domcontentloaded', timeout: 45_000 }).catch(() => {});
-  await sleep(2000);
-  const txt = await page.evaluate(`[...document.querySelectorAll('button,[role="button"]')].map(b => (b.textContent || '').trim()).join('|')`).catch(() => '') as string;
+  const txt = await until(async () => {
+    const t = await page.evaluate(`[...document.querySelectorAll('button,[role="button"]')].map(b => (b.textContent || '').trim()).join('|')`).catch(() => '') as string;
+    return /follow|ikut|friends|rakan|message|mesej/i.test(t) ? t : null;
+  }) ?? '';
   const yes = sel.msgFriendTexts.some(t => txt.split('|').includes(t));
   kvSet(key, yes);
-  await page.goto(back, { waitUntil: 'domcontentloaded' }).catch(() => {});
-  await sleep(1500);
+  await openMessages(page);
   return yes;
 }
 
@@ -113,17 +144,11 @@ export async function checkInbox(page: Page, cfg: any, account: string, hooks: M
   const sel = selectors();
   const out = { conversations: 0, replied: 0, pending: 0, ignored: 0, flagged: 0 };
   await openMessages(page);
-  const loaded = await page.evaluate(`(${JSON.stringify(sel.msgPage)}).some(s => { try { return !!document.querySelector(s); } catch (e) { return false; } })`).catch(() => false);
-  if (!loaded) throw new StepError('read conversations', 'The Messages page did not load as expected (msgPage selectors) — is the address in Settings → Browser → Messages page right?');
-  const list = await runScript<any[]>(page, 'msgList', sel).catch(() => null);
-  if (!list) throw new StepError('read conversations', 'Could not read the conversation list (msgConversation selectors)');
+  let list = await readList(page, sel);
   const unread = list.filter(c => c.unread).slice(0, 15);
   for (const conv of unread) {
     out.conversations++;
-    if (!(await runScript(page, 'msgOpen', { sel, index: conv.index }))) throw new StepError('open conversation', `Could not open the chat with ${conv.name}`);
-    await sleep(1800);
-    const chat = await runScript<any>(page, 'msgChat', sel).catch(() => null);
-    if (!chat || !chat.messages.length) throw new StepError('read chat', `Could not read the messages with ${conv.name} (msgItem / msgMine selectors)`);
+    const chat = await openChat(page, sel, conv.index, conv.name);
     const username = String(chat.username || conv.username || conv.name).replace(/^@/, '').toLowerCase();
     const msgs: ChatMessage[] = chat.messages;
     const lastMine = msgs.map(m => m.mine).lastIndexOf(true);
@@ -192,12 +217,10 @@ export async function sendApproved(page: Page, account: string) {
   for (const r of rows) {
     const screen = screenDraft(r.reply ?? '');
     if (screen) { setRow(r.id, { status: 'flagged', reason: `Edited reply breaks a safety rule (${screen}) — not sent` }); continue; }
-    const list = await runScript<any[]>(page, 'msgList', sel).catch(() => []);
+    const list = await readList(page, sel);
     const conv = list.find(c => (c.username ?? '').toLowerCase() === r.conversation || c.name === r.name || c.name.toLowerCase().includes(r.conversation));
     if (!conv) { setRow(r.id, { status: 'failed', error: `open conversation: @${r.conversation} not found in the list` }); continue; }
-    await runScript(page, 'msgOpen', { sel, index: conv.index });
-    await sleep(1800);
-    try { await typeAndSend(page, r.reply); setRow(r.id, { status: 'sent', sent_at: nowIso(), error: null }); n++; }
+    try { await openChat(page, sel, conv.index, conv.name); await typeAndSend(page, r.reply); setRow(r.id, { status: 'sent', sent_at: nowIso(), error: null }); n++; }
     catch (e: any) { setRow(r.id, { status: 'failed', error: `${e.step ?? 'send'}: ${e.message}` }); }
     await sleep(2000 + Math.random() * 3000);
   }
@@ -212,3 +235,30 @@ export function approveMessage(id: number, text?: string) {
 export function rejectMessage(id: number) { getDb().prepare("UPDATE messages SET status = 'rejected' WHERE id = ? AND status IN ('pending', 'failed', 'approved')").run(id); }
 
 export const messagesBus = new EventEmitter();
+
+/** "Test inbox now": open Messages and read it step by step WITHOUT sending anything. */
+export async function testInbox(page: Page) {
+  const sel = selectors();
+  const steps: Array<{ step: string; ok: boolean; detail?: string }> = [];
+  const done = async (ok: boolean) => ({ ok, steps, url: page.url(), ...(await captureDebug(page, 'inbox-test', sel.msgPage)) });
+  try {
+    await openMessages(page);
+    steps.push({ step: 'Messages page loaded', ok: true, detail: page.url() });
+  } catch (e: any) { steps.push({ step: e.step ?? 'open Messages', ok: false, detail: e.message }); return done(false); }
+  const list = await readList(page, sel);
+  steps.push({ step: 'conversation list read', ok: list.length > 0, detail: list.length ? `${list.length} chat(s), ${list.filter(c => c.unread).length} unread: ${list.slice(0, 5).map(c => `${c.name}${c.username ? ` (@${c.username})` : ''}${c.unread ? ' •unread' : ''}`).join(', ')}` : 'No conversations found (msgConversation selectors) — or the inbox is empty' });
+  if (!list.length) return done(false);
+  // Prefer a chat that is already read: opening an unread one marks it read on TikTok, and the real
+  // check only answers unread chats.
+  const target = list.find(c => !c.unread) ?? list[0];
+  if (target.unread) steps.push({ step: 'note', ok: true, detail: `Only unread chats exist — opening "${target.name}" marks it as read, so it won't be answered automatically` });
+  try {
+    const chat = await openChat(page, sel, target.index, target.name);
+    steps.push({ step: 'chat opened', ok: true, detail: `with ${chat.username ? `@${chat.username}` : `"${target.name}" (username not found — msgHeaderLink)`}, ${chat.messages.length} message(s). Last: ${chat.messages.slice(-3).map((m: ChatMessage) => `${m.mine ? 'Me' : 'Them'}: ${m.text.slice(0, 60)}`).join(' | ')}` });
+    // Every message looking like OURS is impossible in a chat with something to read → msgMine matches too much.
+    if (chat.messages.every((m: ChatMessage) => m.mine)) steps.push({ step: 'mine / theirs told apart', ok: false, detail: 'Every message looks like it was sent by you — the msgMine selectors match too much' });
+  } catch (e: any) { steps.push({ step: e.step ?? 'chat opened', ok: false, detail: e.message }); return done(false); }
+  const box = await until(async () => { for (const s of sel.msgInput) if (await page.locator(s).first().isVisible().catch(() => false)) return s; return null; });
+  steps.push({ step: 'message box found', ok: !!box, detail: box ? `${box} (nothing was typed or sent)` : 'Not found within 10 s (msgInput selectors)' });
+  return done(steps.every(s => s.ok));
+}

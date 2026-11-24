@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { startFakeTikTok, startMockLlm, inbox, dmSent } from './fixture/fake-sites.ts';
+import { startFakeTikTok, startMockLlm, inbox, dmSent, inboxOpts } from './fixture/fake-sites.ts';
 
 const BROWSER = process.env.BROWSER_PATH || ['/opt/pw-browsers/chromium-1243/chrome-linux64/chrome'].find(p => fs.existsSync(p));
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tta-msg-'));
@@ -119,5 +119,28 @@ test('when the Messages page can\'t be read, the failing step is shown on the da
   const r = await m.controller.checkInboxNow();
   assert.match(r.error, /"read conversations" failed: The Messages page did not load/);
   assert.equal(m.controller.status.alert?.kind, 'messages_error');
+  assert.ok(r.screenshot && fs.existsSync(path.join(process.env.DATA_DIR!, 'media', path.basename(r.screenshot))), 'screenshot of the failing step');
+  assert.ok(typeof r.pageText === 'string', 'visible page text saved');
   app.browser.messagesPath = '/messages'; m.store.saveAppSettings(app);
+});
+
+test('"Test inbox now" reads every step and never sends; a slow page is waited for', { skip: !BROWSER && 'no browser', timeout: 180_000 }, async () => {
+  inboxOpts.slowMs = 3000;
+  inbox.convs[0].unread = false; inbox.convs[1].unread = true; // the test opens the first unread chat
+  const before = dmSent.length;
+  const r = await m.controller.testInboxNow();
+  assert.equal(r.ok, true, JSON.stringify(r.steps));
+  assert.deepEqual(r.steps.map((s: any) => s.step), ['Messages page loaded', 'conversation list read', 'chat opened', 'message box found']);
+  assert.match(r.steps[1].detail, /2 chat\(s\), 1 unread/);
+  assert.match(r.steps[2].detail, /@bibacau/, 'opens an already-read chat so unread ones stay unread');
+  assert.equal(inbox.convs[1].unread, true);
+  assert.ok(r.screenshot);
+  assert.equal(dmSent.length, before, 'nothing sent by the test');
+  // a real check on the slow page also works (waits instead of looking once)
+  setMsg({ requireApproval: false, who: 'anyone' });
+  inbox.convs[1].messages.push({ mine: false, text: 'Resepi ni sedap tak?' });
+  const res = await m.controller.checkInboxNow();
+  assert.equal(dmSent.length, before + 1, JSON.stringify({ res, rows: rows().filter((x: any) => x.conversation === 'stranger99') }));
+  assert.equal(dmSent.at(-1)!.to, 'stranger99');
+  inboxOpts.slowMs = 0;
 });

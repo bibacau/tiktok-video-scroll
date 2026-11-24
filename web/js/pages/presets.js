@@ -1,5 +1,5 @@
-import { useState } from 'preact/hooks';
-import { html, put, post, del, patch, guard, toast } from '../api.js';
+import { useEffect, useState } from 'preact/hooks';
+import { html, get, put, post, del, patch, guard, toast } from '../api.js';
 import { SettingsForm } from '../form.js';
 import { useShared, reloadPresets, selectPreset, applyPresetSave } from '../store.js';
 
@@ -85,14 +85,28 @@ export function ShareTest() {
   </section>`;
 }
 
-/** Engage → Private messages: check now + last result. */
+/** Engage → Private messages: test (read-only), check now, last result with screenshot on failure. */
 export function InboxPanel() {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState('');
   const [r, setR] = useState(null);
-  const run = async () => { setBusy(true); try { setR(await post('/api/messages/check')); } catch (e) { toast(e.message, 'err'); } finally { setBusy(false); } };
+  const [test, setTest] = useState(null);
+  useEffect(() => { get('/api/messages').then(d => d.last && setR(d.last)).catch(() => {}); }, []);
+  const check = async () => { setBusy('check'); try { setR(await post('/api/messages/check')); } catch (e) { toast(e.message, 'err'); } finally { setBusy(''); } };
+  const runTest = async () => { setBusy('test'); setTest(null); try { setTest(await post('/api/messages/test')); } catch (e) { toast(e.message, 'err'); } finally { setBusy(''); } };
+  const copyText = async txt => { try { await navigator.clipboard.writeText(txt); toast('Copied'); } catch { toast('Select the text and copy it', 'warn'); } };
+  const Debug = ({ d }) => html`${d.screenshot ? html`<p class="small">Screenshot${d.ok === false || d.error ? ' of the failing step' : ''}:</p><img class="shot" src=${d.screenshot} alt="" />` : null}
+    ${d.pageText ? html`<details><summary class="small">Text visible on the page</summary><pre class="mono small summary">${d.pageText}</pre>
+      <button class="btn small ghost" onClick=${() => copyText(d.pageText)}>Copy text</button></details>` : null}`;
   return html`<section class="card"><h3>💬 Private messages</h3>
-    <p class="help">Checks unread chats now (normally every few minutes while the app runs, and after each watching session). Drafts wait in Post → Queue when approval is on. Everything read and sent is in History → Messages.</p>
-    <button class="btn" disabled=${busy} onClick=${run}>${busy ? 'Checking… (watch the Edge window)' : 'Check inbox now'}</button>
-    ${r ? html`<p class=${r.error ? 'warn' : 'small'}>${r.error ?? r.skipped ?? `${r.conversations} unread chat(s) · ${r.replied + (r.sentApproved || 0)} replied · ${r.pending} waiting for approval · ${r.ignored} ignored · ${r.flagged} flagged for you`}</p>` : null}
+    <p class="help">Test inbox now opens TikTok Messages in the inbox's Edge window and reads it step by step — it never types or sends anything. Check inbox now does a real check (replies follow your approval setting).</p>
+    <div class="row wrap">
+      <button class="btn" disabled=${!!busy} onClick=${runTest}>${busy === 'test' ? 'Testing… watch the Edge window' : '🔍 Test inbox now'}</button>
+      <button class="btn ghost" disabled=${!!busy} onClick=${check}>${busy === 'check' ? 'Checking…' : 'Check inbox now'}</button>
+    </div>
+    ${test ? html`<div class="sharetest"><p><b>${test.ok ? '✅ The inbox can be read' : '❌ A step failed'}</b> <span class="muted small">(${test.inbox} · ${test.url})</span></p>
+      <ol>${test.steps.map(s => html`<li class=${s.ok ? 'okt' : 'errt'}>${s.ok ? '✓' : '✗'} ${s.step}${s.detail ? html` <span class="muted small">— ${s.detail}</span>` : null}</li>`)}</ol>
+      <${Debug} d=${test} /></div>` : null}
+    ${r ? html`<div class="sharetest"><p class=${r.error ? 'warn' : 'small'}>Last check ${r.at ? new Date(r.at).toLocaleString() : ''}: ${r.error ?? r.skipped ?? `${r.conversations} unread chat(s) · ${r.replied + (r.sentApproved || 0)} replied · ${r.pending} waiting for approval · ${r.ignored} ignored · ${r.flagged} flagged for you`}</p>
+      ${r.error ? html`<${Debug} d=${r} />` : null}</div>` : null}
   </section>`;
 }

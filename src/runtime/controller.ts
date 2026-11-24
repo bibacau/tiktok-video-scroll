@@ -11,7 +11,9 @@ import { generatePicks } from '../watch/picks.ts';
 import { creator } from '../create/pipeline.ts';
 import { postComment } from '../watch/engage.ts';
 import { queuePicks, shareQueued } from '../watch/share.ts';
-import { checkInbox, sendApproved } from '../watch/messages.ts';
+import { checkInbox, sendApproved, testInbox } from '../watch/messages.ts';
+import { captureDebug } from '../browser/wait.ts';
+import { selectors } from '../browser/tiktok.ts';
 import { savePlan, todaysPlan, watchedSecondsToday, type PlanEntry } from '../schedule/planner.ts';
 
 export type State = 'idle' | 'starting' | 'running' | 'paused' | 'needs_user' | 'stopping';
@@ -170,6 +172,18 @@ class Controller extends EventEmitter {
   private sharing = false;
 
   // ------------------------------------------------------- private messages
+  /** "Test inbox now": read the inbox step by step, never send. */
+  async testInboxNow(): Promise<any> {
+    const cfg = getPreset(getDayPresets()[zoned().weekday])?.data.engagement.messages;
+    const useAccount = cfg?.inbox === 'account' && cfg.account;
+    if (!useAccount && this.status.state !== 'idle') throw Object.assign(new Error('Stop the watching session first — the test uses the watcher window'), { statusCode: 409 });
+    if (this.checkingInbox) throw Object.assign(new Error('An inbox check is running — try again in a moment'), { statusCode: 409 });
+    this.checkingInbox = true;
+    const own = useAccount ? new BrowserManager(() => `acct-${cfg.account}`) : null;
+    try { return { inbox: useAccount ? 'posting account' : 'watcher', ...(await testInbox(own ? await own.ensure() : await this.browser.ensure())) }; }
+    finally { this.checkingInbox = false; if (own) await own.close().catch(() => {}); }
+  }
+
   private lastInbox = 0;
   private checkingInbox = false;
   lastInboxResult: any = null;
@@ -184,8 +198,9 @@ class Controller extends EventEmitter {
     this.checkingInbox = true;
     const account = cfg.inbox === 'watcher' ? 'watcher' : cfg.account;
     const own = cfg.inbox === 'watcher' ? null : new BrowserManager(() => `acct-${cfg.account}`);
+    let page: any = null;
     try {
-      const page = own ? await own.ensure() : await this.browser.ensure();
+      page = own ? await own.ensure() : await this.browser.ensure();
       const hooks = { alert: (kind: string, message: string) => this.set({ alert: { kind, message, at: nowIso() } }) };
       const sent = await sendApproved(page, account);
       const r = await checkInbox(page, cfg, account, hooks);
@@ -194,7 +209,8 @@ class Controller extends EventEmitter {
       return this.lastInboxResult;
     } catch (e: any) {
       const msg = `Private messages — "${e.step ?? 'check'}" failed: ${e.message}`;
-      this.lastInboxResult = { at: nowIso(), error: msg };
+      const dbg = await captureDebug(page, 'inbox', selectors().msgPage);
+      this.lastInboxResult = { at: nowIso(), error: msg, step: e.step ?? 'check', ...dbg };
       log('warn', 'messages', msg);
       this.set({ alert: { kind: 'messages_error', message: msg, at: nowIso() } });
       return this.lastInboxResult;

@@ -49,3 +49,14 @@ test('AI search queries are validated (length, exclude/banned words, block-list,
   assert.match(validateQuery('laksa johor', watch).why!, /allowed topic/);
   assert.match(validateQuery('https://x.com kuih', watch).why!, /link/);
 });
+
+test('saving the same settings object twice keeps the API key (no side effects on the caller)', async () => {
+  const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
+  const { spawnSync } = await import('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tta-save2-'));
+  const code = `import('./src/paths.ts').then(async p => { p.ensureDirs(); const s = await import('./src/settings/store.ts');
+    const a = s.getAppSettings(); a.llm.apiKey = 'sk-keep-me-123456'; s.saveAppSettings(a); s.saveAppSettings(a);
+    console.log(s.getAppSettings().llm.apiKey, a.llm.apiKey); })`;
+  const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', '-e', code], { env: { ...process.env, DATA_DIR: dir }, encoding: 'utf8' });
+  assert.equal(r.stdout.trim(), 'sk-keep-me-123456 sk-keep-me-123456', r.stderr);
+});

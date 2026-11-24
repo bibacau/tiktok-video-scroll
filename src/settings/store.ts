@@ -63,7 +63,10 @@ export function getAppSettingsPublic(): any {
   for (const p of SECRET_PATHS) setPath(value, p, mask(getPath(value, p) ?? ''));
   return value;
 }
-export function saveAppSettings(input: any) {
+export function saveAppSettings(original: any) {
+  // Work on a copy: blanking the secrets below must never change the caller's object
+  // (saving the same object twice used to delete the stored API keys).
+  const input = original && typeof original === 'object' ? structuredClone(original) : original;
   const secrets = readSecrets();
   for (const p of SECRET_PATHS) {
     const incoming = getPath(input, p);

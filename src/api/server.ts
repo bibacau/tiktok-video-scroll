@@ -203,6 +203,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
   app.get('/api/messages', async () => ({ messages: listMessages(), last: controller.lastInboxResult }));
   app.post('/api/messages/check', async () => controller.checkInboxNow(true));
+  app.post('/api/messages/test', async () => controller.testInboxNow());
   app.post('/api/messages/:id/approve', async req => {
     approveMessage(Number((req.params as any).id), (req.body as any)?.text);
     void controller.checkInboxNow(true).catch(() => {});

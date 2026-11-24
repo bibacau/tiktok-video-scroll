@@ -236,8 +236,8 @@ test('recipient missing → clear explanation, sharing paused, Telegram fallback
   assert.ok(n >= 1, `retried ${n}`);
   assert.ok(sharesSeen.every(s => s.to === 'mainacct') && sharesSeen.length === n);
   assert.equal(new Set(sharesSeen.map(s => s.id)).size, sharesSeen.length, 'retry never sends a video twice');
-  const perVideo = m.db.prepare("SELECT video_key, COUNT(*) n FROM shares WHERE recipient = 'mainacct' GROUP BY video_key HAVING n > 1").all();
-  assert.equal(perVideo.length, 0, 'one share entry per video');
+  const perVideo = m.db.prepare("SELECT video_key, COUNT(*) n FROM shares WHERE recipient = 'mainacct' AND status = 'done' GROUP BY video_key HAVING n > 1").all();
+  assert.equal(perVideo.length, 0, 'each video sent at most once');
   assert.equal(await c.shareQueuedNow(), 0, 'nothing left to send');
   tgs.close();
 });
@@ -266,8 +266,8 @@ test('share with "require my approval": waits in the list, sends only after appr
   m.db.exec('DELETE FROM shares'); sharesSeen.length = 0;
   const cfg = { enabled: true, to: 'bibacau', mode: 'every', minScore: 85, dailyCap: 50, requireApproval: true, telegram: 'off' };
   const t = { videoKey: '7400000000000000006', url: `${tt.url}/@rotiman/video/7400000000000000006`, author: 'rotiman' };
-  assert.equal(await share.maybeShare(null, cfg, t, null, 90), 'pending');
-  assert.equal(await share.maybeShare(null, cfg, t, null, 90), 'skipped', 'no second entry for the same video');
+  assert.equal(await share.planShare(null, cfg, t, null, 90, false), 'pending');
+  assert.equal(await share.planShare(null, cfg, t, null, 90, false), 'skipped', 'no second share for the same video (logged as a skip)');
   assert.equal(sharesSeen.length, 0, 'nothing sent before approval');
   const row = m.db.prepare("SELECT * FROM shares WHERE status = 'pending'").get();
   share.approveShare(row.id);

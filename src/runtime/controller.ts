@@ -48,8 +48,24 @@ class Controller extends EventEmitter {
     this.status.browserOpen = this.browser.isOpen();
     this.status.activeSeconds = Math.round(this.active() / 1000);
     this.status.restarts = this.browser.restarts;
+    if (patch.counts) this.persistSession();
     this.emit('status', this.status);
   }
+
+  /** Keep the History → Sessions row current while the session runs (not only at the end). */
+  private lastPersist = '';
+  persistSession(force = false) {
+    const s = this.status;
+    if (!s.sessionId) return;
+    const sig = `${s.sessionId}:${s.counts.videos}:${s.counts.saved}:${Math.floor(this.active() / 5000)}`;
+    if (!force && sig === this.lastPersist) return;
+    this.lastPersist = sig;
+    try {
+      getDb().prepare("UPDATE sessions SET watched_seconds = ?, videos = ?, saved = ? WHERE id = ? AND status = 'running'")
+        .run(Math.round(this.active() / 1000), s.counts.videos, s.counts.saved, s.sessionId);
+    } catch { /* never break the session over bookkeeping */ }
+  }
+  private persistTimer: NodeJS.Timeout | null = null;
   private active() { return this.activeMs + (this.activeSince ? Date.now() - this.activeSince : 0); }
   snapshot() { this.set({}); return { ...this.status, browserProfile: this.browser.profile(), today: { watchedSeconds: watchedSecondsToday(), spentRM: spentRM('day') } }; }
 
@@ -71,6 +87,8 @@ class Controller extends EventEmitter {
     this.set({ endsAt: new Date(Date.now() + minutes * 60_000).toISOString() });
     log('info', 'session', `Session #${sessionId} started (${trigger}, ${minutes} min, preset "${preset.name}")`);
     this.startScreenshots();
+    if (this.persistTimer) clearInterval(this.persistTimer);
+    this.persistTimer = setInterval(() => this.persistSession(), 5000);
     void this.run(sessionId, preset, minutes * 60_000);
     return this.snapshot();
   }
@@ -107,6 +125,7 @@ class Controller extends EventEmitter {
       else { status = 'error'; note = e.message; log('error', 'session', `Session #${sessionId} failed: ${e.message}`); this.set({ alert: { kind: 'error', message: e.message, at: nowIso() } }); }
     }
     counts = this.status.counts;
+    if (this.persistTimer) { clearInterval(this.persistTimer); this.persistTimer = null; }
     if (this.activeSince) { this.activeMs += Date.now() - this.activeSince; this.activeSince = null; }
     getDb().prepare('UPDATE sessions SET ended_at = ?, watched_seconds = ?, videos = ?, saved = ?, status = ?, note = ? WHERE id = ?')
       .run(nowIso(), Math.round(this.activeMs / 1000), counts.videos, counts.saved, status, note, sessionId);
@@ -140,7 +159,7 @@ class Controller extends EventEmitter {
     if (this.status.state !== 'idle' || this.sharing) return 0;
     const p = preset ?? getPreset(getDayPresets()[zoned().weekday]);
     const cfg = p?.data.save.share;
-    if (!cfg?.enabled || !(getDb().prepare("SELECT 1 FROM shares WHERE status = 'approved' LIMIT 1").get())) return 0;
+    if (!cfg?.enabled || !(getDb().prepare("SELECT 1 FROM shares WHERE status IN ('approved', 'queued') LIMIT 1").get())) return 0;
     this.sharing = true;
     try {
       const page = await this.browser.ensure();
@@ -291,6 +310,24 @@ class Controller extends EventEmitter {
     for (let i = 0; i < 20 && this.status.state !== 'idle'; i++) await sleep(250);
     await this.browser.close();
   }
+}
+
+/**
+ * On startup: sessions left "running" by a crash or restart are closed with their real numbers,
+ * counted from the videos they recorded.
+ */
+export function recoverSessions() {
+  const db = getDb();
+  const rows = db.prepare("SELECT * FROM sessions WHERE status = 'running'").all() as any[];
+  for (const s of rows) {
+    const v = db.prepare('SELECT COUNT(*) n, COALESCE(SUM(saved), 0) saved, MAX(at) last FROM videos WHERE session_id = ?').get(s.id) as any;
+    const fromVideos = v.last ? Math.round((new Date(v.last).getTime() - new Date(s.started_at).getTime()) / 1000) : 0;
+    const watched = Math.max(s.watched_seconds ?? 0, Math.min(fromVideos, s.planned_seconds ?? fromVideos));
+    db.prepare("UPDATE sessions SET status = 'interrupted', ended_at = ?, videos = ?, saved = ?, watched_seconds = ?, note = ? WHERE id = ?")
+      .run(v.last ?? s.started_at, v.n, v.saved, watched, 'The app stopped or crashed during this session', s.id);
+  }
+  if (rows.length) log('warn', 'session', `Closed ${rows.length} session(s) left running by a crash or restart`);
+  return rows.length;
 }
 
 export const controller = new Controller();

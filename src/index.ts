@@ -4,7 +4,7 @@ import { getDb, closeDb } from './db.ts';
 import { log } from './log.ts';
 import { listPresets, loadSecretsIntoRedactor } from './settings/store.ts';
 import { buildServer } from './api/server.ts';
-import { controller } from './runtime/controller.ts';
+import { controller, recoverSessions } from './runtime/controller.ts';
 import { poster } from './post/poster.ts';
 
 const PORT = Number(process.env.PORT || 8004);
@@ -15,6 +15,7 @@ async function main() {
   getDb();
   loadSecretsIntoRedactor();
   listPresets(); // creates the Default preset on first run
+  recoverSessions();
   const app = await buildServer();
   await app.listen({ port: PORT, host: HOST });
   fs.writeFileSync(paths.pid, String(process.pid));

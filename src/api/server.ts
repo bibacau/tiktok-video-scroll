@@ -16,7 +16,7 @@ import { nextSlot, postSettingsFor, poster } from '../post/poster.ts';
 import { analyticsAt, latestMetrics, performanceSummary } from '../post/analytics.ts';
 import { engagementStats, listComments } from '../watch/engage.ts';
 import { listSearches } from '../watch/search.ts';
-import { approveShare, listShares, rejectShare, retryBlocked, sharingPaused } from '../watch/share.ts';
+import { approveShare, listShares, rejectShare, retryBlocked, retryShare, sharingPaused, testShare } from '../watch/share.ts';
 import { EDGE_VOICES } from '../settings/schema.ts';
 import { paths } from '../paths.ts';
 import { getDb } from '../db.ts';
@@ -188,6 +188,18 @@ export async function buildServer(): Promise<FastifyInstance> {
   app.get('/api/history/searches', async () => listSearches());
   app.get('/api/shares', async () => ({ shares: listShares(), paused: sharingPaused() }));
   app.post('/api/shares/:id/approve', async req => { approveShare(Number((req.params as any).id)); void controller.shareQueuedNow().catch(() => {}); return { ok: true, willSend: controller.status.state === 'idle' ? 'now' : 'after the current session' }; });
+  app.post('/api/shares/:id/retry', async req => {
+    retryShare(Number((req.params as any).id));
+    void controller.shareQueuedNow().catch(() => {});
+    return { ok: true, willSend: controller.status.state === 'idle' ? 'now' : 'after the current session' };
+  });
+  app.post('/api/shares/test', async req => {
+    if (controller.status.state !== 'idle') throw Object.assign(new Error('Stop the watching session first — the test uses the watcher window'), { statusCode: 409 });
+    const z = (await import('../time.ts')).zoned();
+    const preset = store.getPreset(String((req.body as any)?.presetId || '')) ?? store.getPreset(store.getDayPresets()[z.weekday])!;
+    const page = await controller.browser.ensure();
+    return testShare(page, preset.data.save.share, (req.body as any)?.url || undefined);
+  });
   app.post('/api/shares/:id/reject', async req => { rejectShare(Number((req.params as any).id)); return { ok: true }; });
   app.post('/api/shares/retry', async () => {
     const n = retryBlocked();

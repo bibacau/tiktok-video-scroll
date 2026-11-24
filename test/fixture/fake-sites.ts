@@ -27,17 +27,17 @@ const VIDEOS = [
 
 const item = (v: typeof VIDEOS[number], i: number) => `
 <article data-e2e="recommend-list-item-container" class="item">
-  <div class="media"><video src="/clip${i % 6}.webm" muted loop playsinline preload="auto"></video></div>
+  <div class="media" __WRAP_${v.id}__><video src="/clip${i % 6}.webm" muted loop playsinline preload="auto"></video></div>
   <div class="side">
     <a href="/@${v.user}" data-e2e="video-author-uniqueid">${v.user}</a>
     <div data-e2e="video-desc">${v.caption}</div>
     <a href="/music/x" data-e2e="video-music">${v.music}</a>
     ${v.ad ? '<span>Sponsored</span>' : ''}${v.live ? '<span data-e2e="live-tag">LIVE</span>' : ''}
     <strong data-e2e="like-count">${(i + 1) * 1234}</strong><strong data-e2e="comment-count">${i * 12}</strong><strong data-e2e="share-count">${i * 3}</strong>
-    <a href="/@${v.user}/video/${v.id}">link</a>
+    __LINK_${v.id}_${v.user}__
     <button data-e2e="like-icon" aria-pressed="false" onclick="this.setAttribute('aria-pressed','true');fetch('/engage?kind=like&id=${v.id}')">♥</button>
     <button data-e2e="favorite-icon" aria-pressed="false" onclick="this.setAttribute('aria-pressed','true');fetch('/engage?kind=favourite&id=${v.id}')">🔖</button>
-    <button data-e2e="share-icon" onclick="openShare('${v.id}')">Share</button>
+    <button data-e2e="share-icon" onclick="openShare('${v.id}','${v.user}')">Share</button>
     <button data-e2e="feed-follow" onclick="this.textContent='Following';fetch('/engage?kind=follow&id=${v.user}')">Follow</button>
   </div>
 </article>`;
@@ -56,6 +56,7 @@ let keys = 0;
 sq.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') location.href = '/search/video?q=' + encodeURIComponent(sq.value) + '&keys=' + keys; else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) keys++; });
 document.addEventListener('keydown', e => { if (document.activeElement === sq) return; if (e.key === 'ArrowDown') { moves++; show(idx+1); if (${captchaAfter} > 0 && moves === ${captchaAfter}) { const c = document.createElement('div'); c.id='captcha-verify-container'; c.textContent='Drag the slider'; document.body.appendChild(c); } } if (e.key === 'ArrowUp') show(idx-1); });
 setTimeout(() => show(0), 300);
+if (__AUTO_ADVANCE__ > 0) { let lastIdx = -1, since = Date.now(); setInterval(() => { if (idx !== lastIdx) { lastIdx = idx; since = Date.now(); } else if (Date.now() - since > __AUTO_ADVANCE__) { show(idx + 1); } }, 200); }
 </script></body></html>`;
 
 export const engaged: Array<{ kind: string; id: string }> = [];
@@ -65,7 +66,7 @@ export const sharesSeen: Array<{ id: string; to: string }> = [];
 export const shareOpts = { recipients: ['kawan1', 'bibacau', 'kawan2'], notMutual: false };
 const SHARE_UI = () => `
 <div role="dialog" id="sharebox" style="display:none;position:fixed;top:15%;left:30%;background:#fff;border:2px solid #333;z-index:20;padding:10px;width:320px">
-  <div>Share to</div><button id="sendto">Send to</button>
+  <div>Share to</div><button id="copylink">Copy link</button><button id="sendto">Send to</button>
   <div id="friends" style="display:none"><input placeholder="Search" id="fs"><div id="flist"></div><div id="fmsg"></div><button id="fsend" disabled>Send</button></div>
 </div>
 <script>
@@ -73,7 +74,9 @@ const SHARE_UI = () => `
   const RECIP = ${JSON.stringify(shareOpts.recipients)}, NOT_MUTUAL = ${shareOpts.notMutual};
   let shareId = null, chosen = null;
   const reset = () => { sharebox.style.display = 'none'; friends.style.display = 'none'; fs.value = ''; chosen = null; fsend.disabled = true; fmsg.textContent = ''; };
-  window.openShare = id => { reset(); shareId = id; sharebox.style.display = 'block'; };
+  let shareUser = '';
+  window.openShare = (id, user) => { reset(); shareId = id; shareUser = user || 'someone'; sharebox.style.display = 'block'; };
+  copylink.onclick = () => { navigator.clipboard.writeText(location.origin + '/@' + shareUser + '/video/' + shareId).catch(() => {}); reset(); };
   document.addEventListener('keydown', e => { if (e.key === 'Escape') reset(); }, true);
   const render = q => {
     const list = RECIP.filter(r => !q || r.includes(q.toLowerCase())).slice(0, q ? 10 : 1);
@@ -92,7 +95,9 @@ const SHARE_UI = () => `
 })();
 </script>`;
 export const commentsPosted: Array<{ video: string; text: string }> = [];
-export function startFakeTikTok(port = 0, opts: { captchaAfter?: number; noSearchBox?: boolean } = {}): Promise<{ url: string; close: () => void }> {
+/** feedIds: where the video id is visible in the feed — 'link' (an <a href=/video/…>), 'wrapper' (only the
+ *  player wrapper's element id, like the real For You feed) or 'none'. autoAdvanceMs: move to the next video by itself. */
+export function startFakeTikTok(port = 0, opts: { captchaAfter?: number; noSearchBox?: boolean; feedIds?: 'link' | 'wrapper' | 'none'; autoAdvanceMs?: number } = {}): Promise<{ url: string; close: () => void }> {
   let pageLoads = 0;
   const server = http.createServer(async (req, res) => {
     const u = new URL(req.url!, 'http://x');
@@ -125,7 +130,11 @@ export function startFakeTikTok(port = 0, opts: { captchaAfter?: number; noSearc
       return;
     }
     if (u.pathname === '/foryou' || u.pathname === '/') {
-      const html = PAGE(pageLoads++ === 0 ? opts.captchaAfter ?? 0 : 0, 4).replace('__SHARE_UI__', SHARE_UI());
+      const ids = opts.feedIds ?? 'link';
+      const html = PAGE(pageLoads++ === 0 ? opts.captchaAfter ?? 0 : 0, 4).replace('__SHARE_UI__', SHARE_UI())
+        .replace(/__WRAP_(\d+)__/g, (_m, id) => ids === 'wrapper' ? `id="xgwrapper-0-${id}"` : '')
+        .replace(/__LINK_(\d+)_([\w.]+)__/g, (_m, id, user) => ids === 'link' ? `<a href="/@${user}/video/${id}">link</a>` : '')
+        .replace('__AUTO_ADVANCE__ > 0', `${opts.autoAdvanceMs ?? 0} > 0`).replace('Date.now() - since > __AUTO_ADVANCE__', `Date.now() - since > ${opts.autoAdvanceMs ?? 0}`);
       res.writeHead(200, { 'content-type': 'text/html' }); res.end(opts.noSearchBox ? html.replace(/<input data-e2e="search-user-input"[^>]*>/, '').replace(/let keys = 0;[\s\S]*?\+ keys; else if[^\n]*\n/, '') : html); return;
     }
     res.writeHead(404); res.end('not found');

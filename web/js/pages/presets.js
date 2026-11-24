@@ -63,3 +63,24 @@ export function PresetsPage() {
     </section>
   </div>`;
 }
+
+/** Save → Share: run the whole share flow once on a saved video while you watch, step by step. */
+export function ShareTest() {
+  const [busy, setBusy] = useState(false);
+  const [r, setR] = useState(null);
+  const run = async () => {
+    setBusy(true); setR(null);
+    try { setR(await post('/api/shares/test', {})); } catch (e) { toast(e.message, 'err'); } finally { setBusy(false); }
+  };
+  return html`<section class="card"><h3>📤 Test share now</h3>
+    <p class="help">Opens your most recent saved video in the watcher's Edge window and sends it to the account in "Send to" — watch the window while it runs. Each step's result is shown below; if a step fails, a screenshot and the share panel's text are saved so the selectors can be fixed.</p>
+    <button class="btn" disabled=${busy} onClick=${run}>${busy ? 'Sharing… watch the Edge window' : 'Test share now'}</button>
+    ${r ? html`<div class="sharetest">
+      <p><b>${r.ok ? '✅ Sent' : '❌ Not sent'}</b> ${r.video ? html`· <a href=${r.video} target="_blank" rel="noopener">video ↗</a>` : null}</p>
+      <ol>${r.steps.map(s => html`<li class=${s.ok ? 'okt' : 'errt'}>${s.ok ? '✓' : '✗'} ${s.step}${s.detail ? html` <span class="muted small">— ${s.detail}</span>` : null}</li>`)}</ol>
+      ${!r.ok && r.message ? html`<p class="warn">${r.message}</p>` : null}
+      ${r.screenshot ? html`<p class="small">Screenshot of the failing step:</p><img class="shot" src=${r.screenshot} alt="" />` : null}
+      ${r.panelText ? html`<details open><summary class="small">Text visible in the share panel</summary><pre class="mono small summary">${r.panelText}</pre></details>` : null}
+    </div>` : null}
+  </section>`;
+}

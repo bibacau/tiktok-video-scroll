@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { html, get, fmtDur, fmtTime, toast, frameBadge } from '../api.js';
+import { html, get, post, fmtDur, fmtTime, toast, frameBadge } from '../api.js';
 
 function Videos({ session }) {
   const [rows, setRows] = useState(null);
@@ -63,7 +63,9 @@ function Searches() {
 
 function Shares() {
   const [d, setD] = useState(null);
-  useEffect(() => { get('/api/shares').then(setD).catch(e => toast(e.message, 'err')); }, []);
+  const load = () => get('/api/shares').then(setD).catch(e => toast(e.message, 'err'));
+  useEffect(load, []);
+  const retry = async id => { try { const r = await post(`/api/shares/${id}/retry`); toast(`Retrying — sends ${r.willSend}`); load(); } catch (e) { toast(e.message, 'err'); } };
   if (!d) return html`<p class="pad muted">Loading…</p>`;
   if (!d.shares.length) return html`<p class="pad muted">Nothing shared yet.</p>`;
   return html`<section class="card">${d.paused ? html`<p class="warn">Sharing is paused for today (TikTok refused the recipient). See the Status page.</p>` : null}
@@ -72,5 +74,6 @@ function Shares() {
       <span class="small">${fmtTime(s.at)}</span><b>@${s.author || '?'}</b><span class="muted small">→ @${s.recipient}</span>
       <a class="small" href=${s.video_url} target="_blank" rel="noopener">video ↗</a>
       ${s.telegram ? html`<span class="muted small">Telegram: ${s.telegram}</span>` : null}
-      ${s.error ? html`<div class="warn small">${s.error}</div>` : null}</div>`)}</section>`;
+      ${['failed', 'skipped', 'blocked', 'needs_user'].includes(s.status) && s.video_url ? html`<button class="btn small ghost" onClick=${() => retry(s.id)}>Retry</button>` : null}
+      ${s.error ? html`<div class=${`small ${s.status === 'skipped' ? 'muted' : 'warn'}`}>${s.error}</div>` : null}</div>`)}</section>`;
 }

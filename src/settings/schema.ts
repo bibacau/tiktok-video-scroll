@@ -254,6 +254,7 @@ export const DEFAULT_SELECTORS = {
   shareSearch: ['input[placeholder*="Search" i]', 'input[placeholder*="Cari" i]', 'input[type="search"]', 'input'],
   shareSendToTexts: ['Send to', 'Send to friends', 'Hantar kepada', 'Send'],
   shareSendTexts: ['Send', 'Hantar'],
+  shareCopyLinkTexts: ['Copy link', 'Copy Link', 'Salin pautan'],
   shareSentTexts: ['Sent', 'Dihantar', 'Message sent'],
   shareBlockedTexts: ["can't send", 'cannot send', 'unable to send', 'not allowed to message', 'only send messages to', 'Tidak dapat menghantar'],
   shareNotFoundTexts: ['No results', 'No users found', 'Tiada hasil'],

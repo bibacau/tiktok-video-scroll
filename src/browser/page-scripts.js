@@ -66,10 +66,20 @@ function inspect(sel) {
   const linkEl = first(root, sel.videoLink);
   let url = linkEl ? linkEl.href : null;
   if (!url && /\/video\/\d+/.test(location.pathname)) url = location.origin + location.pathname;
-  const idMatch = url && url.match(/\/video\/(\d+)/);
+  let idMatch = url && url.match(/\/video\/(\d+)/);
+  // The For You feed often has no /video/ link: TikTok's player wrapper carries the id in its element id
+  // (e.g. "xgwrapper-0-7300000000000000000") or a data attribute. Build the link from author + id.
+  if (!idMatch) {
+    for (let n = best, i = 0; n && i < 14 && !idMatch; n = n.parentElement, i++) {
+      const attrs = [n.id || '', ...Array.from(n.attributes || []).filter(a => /^data-/.test(a.name)).map(a => a.value)];
+      for (const a of attrs) { const m = String(a).match(/(?:^|\D)(\d{17,21})(?:\D|$)/); if (m) { idMatch = [null, m[1]]; break; } }
+    }
+    if (idMatch && author) url = location.origin + '/@' + author + '/video/' + idMatch[1];
+  }
   let key = idMatch ? idMatch[1] : null;
   if (!key) {
-    let h = 0; const s = author + '|' + desc + '|' + (best.currentSrc || '').slice(0, 60);
+    // Stable fallback identity: creator + caption (not the player's stream address, which changes).
+    let h = 0; const s = author + '|' + desc;
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
     key = 'h' + (h >>> 0).toString(36);
   }
@@ -218,6 +228,21 @@ function engageClick(arg) {
 }
 
 // ------------------------------------------------------------------ Share → Send to (main account)
+
+/** Remember what the page copies to the clipboard (TikTok's "Copy link"), then click the Copy link entry. */
+function shareCopyLink(arg) {
+  if (!window.__ttaCopyHooked) {
+    window.__ttaCopyHooked = true;
+    try {
+      const orig = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText.bind(navigator.clipboard) : null;
+      if (navigator.clipboard) navigator.clipboard.writeText = t => { window.__ttaCopied = String(t); return orig ? orig(t).catch(() => {}) : Promise.resolve(); };
+    } catch (e) { /* read-only */ }
+    document.addEventListener('copy', e => { const s = String(document.getSelection() || ''); if (s) window.__ttaCopied = s; }, true);
+  }
+  if (arg.read) return window.__ttaCopied || null;
+  window.__ttaCopied = null;
+  return shareClickText({ dialog: arg.dialog, texts: arg.texts });
+}
 
 /** Click the Share button belonging to the video in view. */
 function shareOpen(arg) {

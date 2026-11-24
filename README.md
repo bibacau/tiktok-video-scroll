@@ -79,6 +79,15 @@ Windows 11 **Smart App Control** blocks programs and scripts that are unsigned a
 2. *Status* tab: press **▶ Start now** (default 10 minutes). Watch the live screenshot, what the AI is thinking, the session timer and the counters.
 3. Afterwards: *Picks* → **Build picks now**. *History* shows every video, the decision and the reason.
 
+## How settings are saved
+
+- **Autosave:** changes save by themselves about 1.5 seconds after you stop typing ("Saved ✓" at the top right). The Save bar is still there as a fallback.
+- **Only what you changed is sent:** each section (Watch, Schedule, …) and each Settings group is saved on its own and merged on the PC, so a page left open on your phone can't overwrite other sections.
+- **Changed elsewhere?** If the same section was changed on another device after you opened it, your save is refused with *"These settings were changed elsewhere — reload to see the latest"* instead of silently overwriting. Other open dashboards update by themselves.
+- **API keys** show **✓ Saved (sk-…abcd)** under the field once stored.
+- **Data folder:** *Settings → Data folder* shows where everything is stored, and the path is written to the log at every start. If settings seem to vanish, check you aren't running a second copy of the app from another folder.
+- **Updates keep your data:** the database is upgraded in place, and `data/app.sqlite`, `data/secrets.json` and `data/edge-profiles` are never reset.
+
 ## The agent's Edge window
 
 - The agent starts **Microsoft Edge itself, as an ordinary program**, with its own profile folder (`data/edge-profiles/<name>`). It then connects to it through Edge's remote-debugging port, the same approach as dsh-douyin-agent. Playwright never launches the browser, so none of its automation switches are present.

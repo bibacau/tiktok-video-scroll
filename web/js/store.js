@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { get, getToken } from './api.js';
+import { get, getToken, CLIENT_ID, toast } from './api.js';
 
 // ------- live connection (status, screenshot, log) shared by all pages -------
 export const live = { status: null, screenshot: null, logs: [], subs: new Set() };
@@ -14,6 +14,12 @@ export function connect() {
       if (data.alert && (!prev?.alert || prev.alert.at !== data.alert.at)) notifyAlert(data.alert);
     } else if (type === 'screenshot') live.screenshot = data;
     else if (type === 'log') live.logs = [data, ...live.logs].slice(0, 100);
+    else if (type === 'settingsChanged') {
+      if (data.clientId === CLIENT_ID) return;
+      if (data.scope === 'preset') reloadPresets().catch(() => {});
+      window.dispatchEvent(new CustomEvent('settingsChanged', { detail: data }));
+      return;
+    }
     else if (type === 'creation' || type === 'creatorQueue' || type === 'creationDeleted' || type === 'login' || type === 'posterQueue' || type === 'analytics') { window.dispatchEvent(new CustomEvent(type, { detail: data })); return; }
     live.subs.forEach(fn => fn());
   };
@@ -36,10 +42,16 @@ function notifyAlert(alert) {
 }
 
 // ------- shared data: schema, presets -------
-export const shared = { schema: null, presets: [], dayPresets: {}, presetId: null, subs: new Set() };
+export const shared = { schema: null, presets: [], dayPresets: {}, versions: {}, presetId: null, subs: new Set() };
+/** Apply a saved section locally (no full reload needed). */
+export function applyPresetSave(preset, section, version) {
+  shared.presets = shared.presets.map(p => p.id === preset.id ? preset : p);
+  shared.versions = { ...shared.versions, [preset.id]: { ...(shared.versions[preset.id] || {}), [section]: version } };
+  shared.subs.forEach(fn => fn());
+}
 export async function reloadPresets() {
   const r = await get('/api/presets');
-  shared.presets = r.presets; shared.dayPresets = r.dayPresets;
+  shared.presets = r.presets; shared.dayPresets = r.dayPresets; shared.versions = r.versions || {};
   let saved = null; try { saved = localStorage.getItem('presetId'); } catch {}
   if (!shared.presets.some(p => p.id === shared.presetId)) shared.presetId = shared.presets.some(p => p.id === saved) ? saved : shared.presets[0]?.id;
   shared.subs.forEach(fn => fn());

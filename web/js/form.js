@@ -1,5 +1,5 @@
 // Renders any settings schema (from /api/schema) as a form. No per-setting UI code needed.
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { html, get, del, getToken, toast } from './api.js';
 
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -47,7 +47,7 @@ function Control({ field: f, value, onChange }) {
         <input type="password" autocomplete="new-password" placeholder=${isSet ? `saved (${value.hint}) — type to replace` : 'not set'}
           value=${typeof value === 'string' ? value : ''} onInput=${e => onChange(e.target.value)} />
         ${isSet ? html`<button class="btn small ghost" onClick=${() => onChange('')}>Clear</button>` : null}
-      </div>`;
+      </div>${isSet ? html`<div class="secretok">✓ Saved (${value.hint})</div>` : typeof value === 'string' && value ? html`<div class="muted small">New key — will be saved</div>` : html`<div class="muted small">Not set</div>`}`;
     }
     case 'textarea':
       return html`<textarea rows=${f.rows || 4} value=${value ?? ''} placeholder=${f.placeholder || ''} onInput=${e => onChange(e.target.value)} />`;
@@ -128,20 +128,100 @@ function JsonInput({ value, rows, onChange }) {
   }} />${err ? html`<p class="warn">${err}</p>` : null}</div>`;
 }
 
-/** Editor for a whole settings object with a sticky save bar. */
-export function SettingsForm({ schema, value, onSave, only, saving }) {
-  const [draft, setDraft] = useState(value);
-  const [dirty, setDirty] = useState(false);
-  const change = v => { setDraft(v); setDirty(true); };
-  const keys = only || Object.keys(schema.fields);
-  return html`<div>
-    ${keys.map(k => schema.fields[k].type === 'group'
-      ? html`<${Group} key=${k} field=${schema.fields[k]} value=${draft[k]} onChange=${v => change({ ...draft, [k]: v })} />`
-      : html`<section class="card" key=${k}><${FieldRow} field=${schema.fields[k]} value=${draft[k]} onChange=${v => change({ ...draft, [k]: v })} /></section>`)}
-    <div class=${`savebar ${dirty ? 'show' : ''}`}>
-      <span>Unsaved changes</span>
-      <button class="btn ghost" onClick=${() => { setDraft(value); setDirty(false); }}>Discard</button>
-      <button class="btn primary" disabled=${saving} onClick=${async () => { if (await onSave(draft) !== false) setDirty(false); }}>Save</button>
+/** Forms with changes that are not saved yet (pending autosave, failed or conflicting). */
+export const unsaved = new Map(); // id → { flush, state }
+let formSeq = 0;
+
+/**
+ * Editor for one or more settings groups. Each group is saved on its own (only that group is sent,
+ * with the version it was loaded at), automatically ~1.5 s after the last change.
+ *   groups: [{ key, field, value, version }]   onSave(key, value, version) → { version } (throws on 409)
+ *   mode 'fields' renders the fields of a single group as cards (preset sections); 'groups' renders each group as a card.
+ */
+export function SettingsForm({ groups, onSave, onReload, mode = 'groups', autosave = true }) {
+  const [id] = useState(() => `form${++formSeq}`);
+  const [drafts, setDrafts] = useState(() => Object.fromEntries(groups.map(g => [g.key, g.value])));
+  const [base, setBase] = useState(() => Object.fromEntries(groups.map(g => [g.key, g.version])));
+  const [dirty, setDirty] = useState({});
+  const [state, setState] = useState('idle'); // idle | pending | saving | saved | error | conflict
+  const [error, setError] = useState('');
+  const timers = useRef({}), seq = useRef({}), inFlight = useRef({}), live = useRef({ drafts, base, dirty });
+  live.current = { drafts, base, dirty };
+
+  // Take new values from the server whenever they change — unless that group has unsaved edits.
+  const sig = groups.map(g => `${g.key}@${g.version}`).join('|');
+  useEffect(() => {
+    const d = { ...live.current.drafts }, b = { ...live.current.base };
+    let conflict = false;
+    for (const g of groups) {
+      if (inFlight.current[g.key]) continue; // the echo of our own save
+      if (live.current.dirty[g.key]) { if (g.version !== b[g.key]) conflict = true; continue; }
+      d[g.key] = g.value; b[g.key] = g.version;
+    }
+    setDrafts(d); setBase(b);
+    if (conflict) { setState('conflict'); setError('These settings were changed elsewhere — reload to see the latest'); }
+  }, [sig]);
+
+  const save = async key => {
+    clearTimeout(timers.current[key]);
+    const mySeq = seq.current[key] || 0;
+    setState('saving');
+    inFlight.current[key] = true;
+    try {
+      const r = await onSave(key, live.current.drafts[key], live.current.base[key]);
+      live.current.base = { ...live.current.base, [key]: r.version };
+      setBase(b => ({ ...b, [key]: r.version }));
+      if ((seq.current[key] || 0) === mySeq) setDirty(x => { const n = { ...x }; delete n[key]; return n; });
+      setState('saved'); setError('');
+      for (const w of r.warnings || []) toast(w.message, 'warn');
+    } catch (e) {
+      if (/changed elsewhere|409/.test(e.message)) { setState('conflict'); setError('These settings were changed elsewhere — reload to see the latest'); }
+      else { setState('error'); setError(e.message); }
+    } finally { inFlight.current[key] = false; }
+  };
+  const saveAll = () => Promise.all(Object.keys(live.current.dirty).map(save));
+  const change = (key, v) => {
+    seq.current[key] = (seq.current[key] || 0) + 1;
+    setDrafts(d => ({ ...d, [key]: v })); setDirty(x => ({ ...x, [key]: true }));
+    if (state !== 'conflict') setState('pending');
+    if (autosave && state !== 'conflict') { clearTimeout(timers.current[key]); timers.current[key] = setTimeout(() => save(key), 1500); }
+  };
+  const discard = () => {
+    Object.values(timers.current).forEach(clearTimeout);
+    setDrafts(Object.fromEntries(groups.map(g => [g.key, g.value]))); setBase(Object.fromEntries(groups.map(g => [g.key, g.version])));
+    setDirty({}); setState('idle'); setError('');
+  };
+  const reload = async () => { discard(); await onReload?.(); };
+
+  const anyDirty = Object.keys(dirty).length > 0;
+  useEffect(() => {
+    if (anyDirty || state === 'conflict' || state === 'error') unsaved.set(id, { flush: saveAll, state });
+    else unsaved.delete(id);
+  }, [anyDirty, state]);
+  // Leaving the page: save what is pending right away.
+  useEffect(() => () => { if (Object.keys(live.current.dirty).length && autosave) saveAll(); unsaved.delete(id); }, []);
+
+  const indicator = { pending: '✎ Unsaved…', saving: 'Saving…', saved: 'Saved ✓', error: '⚠️ Not saved', conflict: '⚠️ Changed elsewhere', idle: '' }[state];
+  const body = mode === 'fields'
+    ? groups.flatMap(g => Object.entries(g.field.fields).map(([k, f]) => {
+        if (f.showIf && drafts[g.key]?.[f.showIf.field] !== f.showIf.equals) return null;
+        const set = v => change(g.key, { ...drafts[g.key], [k]: v });
+        return f.type === 'group'
+          ? html`<${Group} key=${g.key + k} field=${f} value=${drafts[g.key]?.[k]} onChange=${set} />`
+          : html`<section class="card" key=${g.key + k}><${FieldRow} field=${f} value=${drafts[g.key]?.[k]} onChange=${set} /></section>`;
+      }))
+    : groups.map(g => g.field.type === 'group'
+        ? html`<${Group} key=${g.key} field=${g.field} value=${drafts[g.key]} onChange=${v => change(g.key, v)} />`
+        : html`<section class="card" key=${g.key}><${FieldRow} field=${g.field} value=${drafts[g.key]} onChange=${v => change(g.key, v)} /></section>`);
+  return html`<div class="settingsform" data-state=${state}>
+    ${indicator ? html`<div class=${`saveind ${state}`}>${indicator}</div>` : null}
+    ${state === 'conflict' ? html`<div class="banner">${error} <button class="btn small" onClick=${reload}>Reload</button></div>` : null}
+    ${state === 'error' ? html`<div class="warn">Not saved: ${error} <button class="btn small" onClick=${saveAll}>Try again</button></div>` : null}
+    ${body}
+    <div class=${`savebar ${anyDirty || state === 'error' ? 'show' : ''}`}>
+      <span>${state === 'saving' ? 'Saving…' : state === 'error' ? 'Not saved' : 'Unsaved changes (saving automatically)'}</span>
+      <button class="btn ghost" onClick=${discard}>Discard</button>
+      <button class="btn primary" disabled=${state === 'conflict'} onClick=${saveAll}>Save now</button>
     </div>
   </div>`;
 }

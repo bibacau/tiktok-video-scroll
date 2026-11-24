@@ -69,16 +69,30 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   // ----------------------------------------------------------- schema & settings
   app.get('/api/schema', async () => ({ preset: presetSchema, app: appSchema }));
-  app.get('/api/app-settings', async () => store.getAppSettingsPublic());
-  app.put('/api/app-settings', async req => store.saveAppSettings(req.body));
+  // Settings are saved one group / one section at a time, merged on the server, with a version check.
+  const clientId = (req: any) => String(req.headers['x-client-id'] ?? '').slice(0, 64) || undefined;
+  app.get('/api/app-settings', async () => ({ ...store.getAppSettingsPublic(), _versions: store.appVersions() }));
+  app.patch('/api/app-settings/groups/:group', async req => {
+    const b = (req.body ?? {}) as any;
+    return store.patchAppGroup((req.params as any).group, b.value, b.version, clientId(req));
+  });
+  app.put('/api/app-settings', async (_req, reply) => reply.code(410).send({ error: 'Whole-settings saves are no longer accepted (they overwrote newer changes). Reload the dashboard.' }));
 
-  app.get('/api/presets', async () => ({ presets: store.listPresets(), dayPresets: store.getDayPresets() }));
+  app.get('/api/presets', async () => {
+    const presets = store.listPresets();
+    return { presets, dayPresets: store.getDayPresets(), versions: Object.fromEntries(presets.map(p => [p.id, store.presetVersions(p.id)])) };
+  });
+  app.patch('/api/presets/:id/sections/:section', async req => {
+    const { id, section } = req.params as any; const b = (req.body ?? {}) as any;
+    return store.patchPresetSection(id, section, b.value, b.version, clientId(req));
+  });
   app.post('/api/presets', async req => {
     const b = (req.body ?? {}) as any;
     const from = b.copyFrom ? store.getPreset(b.copyFrom) : null;
     return store.createPreset(String(b.name || (from ? `${from.name} copy` : 'New preset')), from?.data ?? {});
   });
-  app.put('/api/presets/:id', async req => store.updatePreset((req.params as any).id, req.body as any));
+  // Rename only — settings are saved per section (PATCH above) so a stale page can't overwrite other sections.
+  app.put('/api/presets/:id', async req => store.updatePreset((req.params as any).id, { name: (req.body as any)?.name }));
   app.delete('/api/presets/:id', async req => { store.deletePreset((req.params as any).id); return { ok: true }; });
   app.put('/api/day-presets', async req => store.setDayPresets(req.body as any));
 
@@ -172,7 +186,7 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   app.get('/api/info', async () => ({
     version: '0.1.0', lan: Object.values(os.networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i!.address),
-    passwordRequired: !!store.getAppSettings().general.dashboardPassword,
+    passwordRequired: !!store.getAppSettings().general.dashboardPassword, dataDir: paths.data,
   }));
 
   // Stop the whole app: dashboard Stop button and `launch.mjs --stop`. Protected by the dashboard
@@ -282,6 +296,8 @@ export async function buildServer(): Promise<FastifyInstance> {
     const onLogin = (st: unknown) => send('login', st);
     const onPostQueue = (q: unknown) => send('posterQueue', q);
     const onAnalytics = (a: unknown) => send('analytics', a);
+    const onSettings = (e: unknown) => send('settingsChanged', e);
+    store.settingsBus.on('changed', onSettings);
     logins.on('status', onLogin); poster.on('queue', onPostQueue); poster.on('analytics', onAnalytics);
     controller.on('status', onStatus); controller.on('screenshot', onShot); bus.on('log', onLog);
     creator.on('update', onCreation); creator.on('queue', onQueue); creator.on('deleted', onDeleted);
@@ -289,6 +305,7 @@ export async function buildServer(): Promise<FastifyInstance> {
     if (controller.lastScreenshot) send('screenshot', controller.lastScreenshot);
     socket.on('close', () => {
       controller.viewers--; controller.off('status', onStatus); controller.off('screenshot', onShot); bus.off('log', onLog);
+      store.settingsBus.off('changed', onSettings);
       logins.off('status', onLogin); poster.off('queue', onPostQueue); poster.off('analytics', onAnalytics);
       creator.off('update', onCreation); creator.off('queue', onQueue); creator.off('deleted', onDeleted);
     });

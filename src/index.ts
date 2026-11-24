@@ -19,6 +19,7 @@ async function main() {
   await app.listen({ port: PORT, host: HOST });
   fs.writeFileSync(paths.pid, String(process.pid));
   log('info', 'app', `Dashboard running on http://localhost:${PORT}`);
+  log('info', 'app', `Data folder: ${paths.data} (settings, API keys, Edge profiles, videos)`);
   if (process.env.NO_SCHEDULER !== '1') { controller.startScheduler(); poster.start(); }
 
   let closing = false;

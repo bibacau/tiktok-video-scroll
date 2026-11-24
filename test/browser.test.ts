@@ -48,7 +48,8 @@ test('profile held by another window → clear PROFILE_IN_USE error; "close it f
   // the "user" opens the profile by hand (no debugging port), plus an unrelated browser profile
   spawn(BROWSER!, [`--user-data-dir=${dir}`, '--no-first-run', ...extra, 'about:blank'], { stdio: 'ignore', detached: true }).unref();
   spawn(BROWSER!, [`--user-data-dir=${other}`, '--no-first-run', ...extra, 'about:blank'], { stdio: 'ignore', detached: true }).unref();
-  for (let i = 0; i < 30 && !(await m.edge.profileProcesses(dir)).length; i++) await new Promise(r => setTimeout(r, 200));
+  for (let i = 0; i < 100 && !((await m.edge.profileProcesses(dir)).length && (await m.edge.profileProcesses(other)).length); i++) await new Promise(r => setTimeout(r, 200));
+  await new Promise(r => setTimeout(r, 1000)); // let the hand-opened window finish starting
   assert.equal((await m.edge.profileState('t-busy')).state, 'busy');
   const b = new m.edge.BrowserManager(() => 't-busy');
   await assert.rejects(b.ensure(), (e: any) => e.code === 'PROFILE_IN_USE' && e.pids.length > 0 && /Close it for me/.test(e.message));

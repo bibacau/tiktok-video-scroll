@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { getDb, kvGet, kvSet, nowIso } from '../db.ts';
 import { paths } from '../paths.ts';
@@ -6,6 +7,31 @@ import { registerSecret } from '../log.ts';
 import { coerce, defaults, getPath, secretPaths, setPath, warnings, DAYS, type Day } from './dsl.ts';
 import { appSchema, presetSchema } from './schema.ts';
 import { listPrompts, setPrompt } from './prompts.ts';
+
+/** Emits 'changed' {scope, id?, section|group, version, clientId?} whenever saved settings change. */
+export const settingsBus = new EventEmitter();
+let verSeq = 0;
+const newVersion = () => `${Date.now().toString(36)}.${(++verSeq).toString(36)}`;
+const stale = (current: string) => Object.assign(new Error('These settings were changed elsewhere — reload to see the latest'), { statusCode: 409, code: 'STALE', current });
+
+// Each preset section and each app-settings group has its own version, so two people (or a phone and
+// a PC) editing DIFFERENT sections never clash, while a stale save of the SAME section is refused.
+export const presetVersions = (id: string): Record<string, string> => {
+  const v = kvGet<Record<string, string>>(`ver:preset:${id}`, {});
+  return Object.fromEntries(Object.keys((presetSchema as any).fields).map(k => [k, v[k] ?? '0']));
+};
+export const appVersions = (): Record<string, string> => {
+  const v = kvGet<Record<string, string>>('ver:app', {});
+  return Object.fromEntries(Object.keys((appSchema as any).fields).map(k => [k, v[k] ?? '0']));
+};
+function bump(key: string, names: string[], scope: 'preset' | 'app', id?: string, clientId?: string) {
+  if (!names.length) return {};
+  const v = kvGet<Record<string, string>>(key, {});
+  const out: Record<string, string> = {};
+  for (const n of names) { v[n] = out[n] = newVersion(); settingsBus.emit('changed', { scope, id, [scope === 'preset' ? 'section' : 'group']: n, version: v[n], clientId }); }
+  kvSet(key, v);
+  return out;
+}
 
 export interface Preset { id: string; name: string; data: any; created_at: string; updated_at: string }
 
@@ -46,10 +72,36 @@ export function saveAppSettings(input: any) {
     if (input && typeof input === 'object') setPath(input, p, '');
   }
   writeSecrets(secrets);
+  const before = coerce(appSchema, kvGet('app', {}));
   const value = coerce(appSchema, input);
   for (const p of SECRET_PATHS) setPath(value, p, '');
   kvSet('app', value);
+  bump('ver:app', Object.keys(value).filter(k => JSON.stringify(value[k]) !== JSON.stringify(before[k])), 'app');
   return { settings: getAppSettingsPublic(), warnings: warnings(appSchema, value) };
+}
+
+/** Save ONE group of the app settings (merged on the server; other groups are untouched). */
+export function patchAppGroup(group: string, input: unknown, baseVersion?: string, clientId?: string) {
+  const field = (appSchema as any).fields[group];
+  if (!field) throw Object.assign(new Error('Unknown settings group'), { statusCode: 404 });
+  const cur = appVersions()[group];
+  if (baseVersion !== undefined && baseVersion !== cur) throw stale(cur);
+  const value: any = input && typeof input === 'object' ? structuredClone(input) : {};
+  const secrets = readSecrets();
+  let secretsChanged = false;
+  for (const p of SECRET_PATHS.filter(x => x === group || x.startsWith(group + '.'))) {
+    const rel = p === group ? '' : p.slice(group.length + 1);
+    const incoming = rel ? getPath(value, rel) : value;
+    if (typeof incoming === 'string') { secretsChanged = true; if (incoming) { secrets[p] = incoming; registerSecret(incoming); } else delete secrets[p]; }
+    if (rel) setPath(value, rel, '');
+  }
+  if (secretsChanged) writeSecrets(secrets);
+  const all = coerce(appSchema, kvGet('app', {}));
+  all[group] = coerce(field, value);
+  for (const p of SECRET_PATHS) setPath(all, p, '');
+  kvSet('app', all);
+  const version = bump('ver:app', [group], 'app', undefined, clientId)[group];
+  return { settings: getAppSettingsPublic(), version, warnings: warnings(field, all[group], group) };
 }
 
 // ---------------- presets ----------------
@@ -76,7 +128,23 @@ export function updatePreset(id: string, patch: { name?: string; data?: unknown 
   const name = typeof patch.name === 'string' && patch.name.trim() ? patch.name.trim().slice(0, 80) : cur.name;
   const data = patch.data !== undefined ? coerce(presetSchema, patch.data) : cur.data;
   getDb().prepare('UPDATE presets SET name = ?, data = ?, updated_at = ? WHERE id = ?').run(name, JSON.stringify(data), nowIso(), id);
+  bump(`ver:preset:${id}`, Object.keys(data).filter(k => JSON.stringify(data[k]) !== JSON.stringify(cur.data[k])), 'preset', id);
+  if (name !== cur.name) settingsBus.emit('changed', { scope: 'preset', id, section: '_name', version: nowIso() });
   return { preset: getPreset(id)!, warnings: warnings(presetSchema, data) };
+}
+
+/** Save ONE section of a preset (merged on the server; other sections are untouched). */
+export function patchPresetSection(id: string, section: string, input: unknown, baseVersion?: string, clientId?: string) {
+  const cur = getPreset(id);
+  if (!cur) throw Object.assign(new Error('Preset not found'), { statusCode: 404 });
+  const field = (presetSchema as any).fields[section];
+  if (!field) throw Object.assign(new Error('Unknown preset section'), { statusCode: 404 });
+  const v = presetVersions(id)[section];
+  if (baseVersion !== undefined && baseVersion !== v) throw stale(v);
+  const data = { ...cur.data, [section]: coerce(field, input) };
+  getDb().prepare('UPDATE presets SET data = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(data), nowIso(), id);
+  const version = bump(`ver:preset:${id}`, [section], 'preset', id, clientId)[section];
+  return { preset: getPreset(id)!, version, warnings: warnings(field, data[section], section) };
 }
 export function deletePreset(id: string) {
   if (listPresets().length <= 1) throw Object.assign(new Error('Keep at least one preset'), { statusCode: 400 });

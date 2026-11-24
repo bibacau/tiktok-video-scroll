@@ -10,6 +10,7 @@ import { BudgetPage } from './pages/budget.js';
 import { HistoryPage } from './pages/history.js';
 import { SettingsPage } from './pages/settings.js';
 import { CreatePage } from './pages/create.js';
+import { unsaved } from './form.js';
 import { PostPage } from './pages/post.js';
 
 const TABS = [
@@ -34,7 +35,17 @@ function App() {
   const [needLogin, setNeedLogin] = useState(false);
   const l = useLive();
   useEffect(() => {
-    const onHash = () => setTab(location.hash.slice(1) || 'status');
+    let lastHash = location.hash;
+    const onHash = () => {
+      // Pending autosaves are flushed; settings that could NOT be saved trigger a warning.
+      const problems = [...unsaved.values()].filter(u => u.state === 'error' || u.state === 'conflict');
+      for (const u of unsaved.values()) u.flush?.();
+      if (problems.length && !confirm('Some settings on this page could not be saved. Leave anyway?')) { history.replaceState(null, '', lastHash); return; }
+      lastHash = location.hash;
+      setTab(location.hash.slice(1) || 'status');
+    };
+    const onUnload = e => { if (unsaved.size) { for (const u of unsaved.values()) u.flush?.(); e.preventDefault(); e.returnValue = ''; } };
+    window.addEventListener('beforeunload', onUnload);
     const onNeed = () => setNeedLogin(true);
     window.addEventListener('hashchange', onHash); window.addEventListener('need-login', onNeed);
     boot();
@@ -58,7 +69,7 @@ function App() {
     </header>
     ${s?.alert ? html`<div class=${`banner ${s.alert.kind}`} onClick=${() => { location.hash = 'status'; }}>⚠️ ${s.alert.message}</div>` : null}
     <nav class="tabs">${TABS.map(([k, label]) => html`<a href=${'#' + k} class=${tab === k ? 'on' : ''} onClick=${() => { document.title = 'TikTok Research Agent'; }}>${label}</a>`)}</nav>
-    <main>${!ready ? html`<p class="muted pad">Loading…</p>` : page(tab)}</main>
+    <main key=${tab}>${!ready ? html`<p class="muted pad">Loading…</p>` : page(tab)}</main>
   </div>`;
 }
 

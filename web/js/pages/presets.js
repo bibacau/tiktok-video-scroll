@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
-import { html, put, post, del, guard, toast } from '../api.js';
+import { html, put, post, del, patch, guard, toast } from '../api.js';
 import { SettingsForm } from '../form.js';
-import { useShared, reloadPresets, selectPreset } from '../store.js';
+import { useShared, reloadPresets, selectPreset, applyPresetSave } from '../store.js';
 
 const DAYS = [['mon', 'Monday'], ['tue', 'Tuesday'], ['wed', 'Wednesday'], ['thu', 'Thursday'], ['fri', 'Friday'], ['sat', 'Saturday'], ['sun', 'Sunday']];
 
@@ -17,24 +17,20 @@ export function PresetBar() {
 /** Edit one section (watch / schedule / save / engagement) of the selected preset. */
 export function PresetSection({ section }) {
   const sh = useShared();
-  const [saving, setSaving] = useState(false);
   const preset = sh.presets.find(p => p.id === sh.presetId);
   if (!preset) return html`<p class="pad muted">No preset.</p>`;
-  const schema = sh.schema.preset.fields[section];
-  const save = async draft => {
-    setSaving(true);
-    try {
-      const r = await put(`/api/presets/${preset.id}`, { data: { ...preset.data, [section]: draft } });
-      await reloadPresets();
-      toast('Saved');
-      for (const w of r.warnings || []) if (w.path.startsWith(section)) toast(w.message, 'warn');
-      return true;
-    } catch (e) { toast(e.message, 'err'); return false; } finally { setSaving(false); }
+  const field = sh.schema.preset.fields[section];
+  const version = sh.versions[preset.id]?.[section] ?? '0';
+  // Only this section is sent, with the version it was loaded at; the server merges it.
+  const save = async (_key, value, base) => {
+    const r = await patch(`/api/presets/${preset.id}/sections/${section}`, { value, version: base });
+    applyPresetSave(r.preset, section, r.version);
+    return r;
   };
   return html`<div>
     <${PresetBar} />
-    ${schema.phase ? html`<p class="note">These settings are saved now; the feature that uses them arrives in phase ${schema.phase}.</p>` : null}
-    <${SettingsForm} key=${preset.id + preset.updated_at} schema=${schema} value=${preset.data[section]} onSave=${save} saving=${saving} />
+    ${field.phase ? html`<p class="note">These settings are saved now; the feature that uses them arrives in phase ${field.phase}.</p>` : null}
+    <${SettingsForm} key=${`${section}:${preset.id}`} mode="fields" groups=${[{ key: section, field, value: preset.data[section], version }]} onSave=${save} onReload=${reloadPresets} />
   </div>`;
 }
 

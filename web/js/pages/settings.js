@@ -1,24 +1,27 @@
 import { useEffect, useState } from 'preact/hooks';
-import { html, get, put, post, guard, toast, getToken } from '../api.js';
+import { html, get, put, post, patch, guard, toast, getToken } from '../api.js';
 import { SettingsForm } from '../form.js';
 import { useShared, reloadPresets } from '../store.js';
 
-/** Edit some groups of the app-wide settings. */
+/** Edit some groups of the app-wide settings. Each group is saved on its own. */
 export function AppSettingsForm({ only }) {
   const sh = useShared();
-  const [value, setValue] = useState(null);
-  const [version, setVersion] = useState(0);
-  useEffect(() => { get('/api/app-settings').then(setValue).catch(e => toast(e.message, 'err')); }, [version]);
-  if (!value) return html`<p class="muted pad">Loading…</p>`;
-  const save = async draft => {
-    try {
-      const r = await put('/api/app-settings', { ...value, ...draft });
-      setValue(r.settings); setVersion(v => v + 1); toast('Saved');
-      for (const w of r.warnings || []) toast(w.message, 'warn');
-      return true;
-    } catch (e) { toast(e.message, 'err'); return false; }
+  const [data, setData] = useState(null);
+  const load = () => get('/api/app-settings').then(setData).catch(e => toast(e.message, 'err'));
+  useEffect(() => {
+    load();
+    const on = e => { if (e.detail.scope === 'app' && only.includes(e.detail.group)) load(); };
+    window.addEventListener('settingsChanged', on);
+    return () => window.removeEventListener('settingsChanged', on);
+  }, []);
+  if (!data) return html`<p class="muted pad">Loading…</p>`;
+  const save = async (group, value, version) => {
+    const r = await patch(`/api/app-settings/groups/${group}`, { value, version });
+    setData(d => ({ ...d, [group]: r.settings[group], _versions: { ...d._versions, [group]: r.version } }));
+    return r;
   };
-  return html`<${SettingsForm} key=${version} schema=${sh.schema.app} value=${value} only=${only} onSave=${save} />`;
+  const groups = only.map(k => ({ key: k, field: sh.schema.app.fields[k], value: data[k], version: data._versions?.[k] ?? '0' }));
+  return html`<${SettingsForm} key=${only.join(',')} groups=${groups} onSave=${save} onReload=${load} />`;
 }
 
 export function SettingsPage() {
@@ -46,6 +49,8 @@ export function SettingsPage() {
     ${info ? html`<section class="card"><h3>Open on your phone</h3>
       <p>Same Wi-Fi: ${info.lan.map(ip => html`<code>http://${ip}:${location.port || 80}</code> `)}</p>
       <p class="help">If it doesn't open, allow Node.js through Windows Firewall (see README). Set a dashboard password below if others use your Wi-Fi.</p></section>` : null}
+    ${info?.dataDir ? html`<section class="card"><h3>Data folder</h3><p><code class="breakall">${info.dataDir}</code></p>
+      <p class="help">Your settings, API keys, Edge profiles and videos live here. If settings seem to "disappear", check that you're not running a second copy of the app from a different folder: the path is also written to the log at every start.</p></section>` : null}
     <section class="card"><h3>Stop the app</h3>
       <p class="help">Stops watching, closes the agent's Edge window and shuts the app down. Start it again with the <b>TikTok Agent</b> shortcut on your PC.</p>
       <button class="btn danger" onClick=${stopApp}>⏻ Stop the app</button>
@@ -58,6 +63,6 @@ export function SettingsPage() {
         <label class="btn">Import JSON<input type="file" accept="application/json,.json" hidden onChange=${importFile} /></label>
       </div>
     </section>
-    <${AppSettingsForm} only=${['general', 'llm', 'media', 'tools', 'browser', 'notifications', 'selectors']} />
+    <${AppSettingsForm} only=${['general', 'llm', 'media', 'tools', 'browser', 'notifications', 'selectors', 'postSelectors']} />
   </div>`;
 }

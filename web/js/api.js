@@ -7,9 +7,11 @@ try { token = localStorage.getItem('dashToken') || ''; } catch {}
 export const setToken = t => { token = t; try { localStorage.setItem('dashToken', t); } catch {} };
 export const getToken = () => token;
 
+/** Identifies this open dashboard, so it can ignore the echo of its own saves. */
+export const CLIENT_ID = Math.random().toString(36).slice(2, 12);
 export async function api(method, url, body) {
   const res = await fetch(url, {
-    method, headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), 'x-dashboard-token': token },
+    method, headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), 'x-dashboard-token': token, 'x-client-id': CLIENT_ID },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -22,6 +24,7 @@ export const get = url => api('GET', url);
 export const put = (url, b) => api('PUT', url, b ?? {});
 export const post = (url, b) => api('POST', url, b ?? {});
 export const del = url => api('DELETE', url);
+export const patch = (url, b) => api('PATCH', url, b ?? {});
 
 // tiny toast
 export function toast(msg, kind = 'ok') {

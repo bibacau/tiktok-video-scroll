@@ -161,3 +161,7 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { text
 .pill.posted, .pill.scheduled_tiktok, .pill.approved, .pill.scheduled { background: #16a34a22; color: var(--ok); }
 .pill.posting { background: #b4530922; color: var(--warn); } .pill.post_failed, .pill.rejected { background: var(--errbg); color: var(--err); }
 .pill.pending { background: #b4530922; color: var(--warn); }
+.saveind { position: sticky; top: 92px; z-index: 8; float: right; margin: 4px 0; font-size: 13px; padding: 3px 10px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+.saveind.saved { color: var(--ok); } .saveind.error, .saveind.conflict { color: var(--err); background: var(--errbg); }
+.secretok { color: var(--ok); font-size: 13px; margin-top: 4px; font-weight: 600; }
+.breakall { word-break: break-all; }

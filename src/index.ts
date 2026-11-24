@@ -5,6 +5,7 @@ import { log } from './log.ts';
 import { listPresets, loadSecretsIntoRedactor } from './settings/store.ts';
 import { buildServer } from './api/server.ts';
 import { controller } from './runtime/controller.ts';
+import { poster } from './post/poster.ts';
 
 const PORT = Number(process.env.PORT || 8004);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -18,7 +19,7 @@ async function main() {
   await app.listen({ port: PORT, host: HOST });
   fs.writeFileSync(paths.pid, String(process.pid));
   log('info', 'app', `Dashboard running on http://localhost:${PORT}`);
-  if (process.env.NO_SCHEDULER !== '1') controller.startScheduler();
+  if (process.env.NO_SCHEDULER !== '1') { controller.startScheduler(); poster.start(); }
 
   let closing = false;
   const shutdown = async (sig: string) => {

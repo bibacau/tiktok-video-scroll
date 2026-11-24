@@ -146,7 +146,7 @@ export function BrowserState({ profile }) {
 }
 
 /** "Log in to TikTok" in a normal, non-automated Edge window, with live detection. */
-export function LoginBox({ profile, disabled, label = 'Log in to TikTok' }) {
+export function LoginBox({ profile, disabled, label = 'Log in to TikTok', openPath }) {
   const [st, setSt] = useState(null);
   useEffect(() => {
     if (!profile) return;
@@ -155,7 +155,7 @@ export function LoginBox({ profile, disabled, label = 'Log in to TikTok' }) {
     window.addEventListener('login', on);
     return () => window.removeEventListener('login', on);
   }, [profile]);
-  const open = guard(async () => { setSt(await post(`/api/login/${encodeURIComponent(profile)}/open`)); toast('A normal Edge window is opening on your PC — log in there'); });
+  const open = guard(async () => { setSt(await post(openPath || `/api/login/${encodeURIComponent(profile)}/open`, { qr: true })); toast('A normal Edge window is opening on your PC — log in there'); });
   const check = guard(async () => setSt(await post(`/api/login/${encodeURIComponent(profile)}/check`)));
   if (!st) return null;
   const icon = st.waiting ? '⏳' : st.loggedIn ? '✅' : st.loggedIn === false ? '⚠️' : '❔';

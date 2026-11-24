@@ -11,6 +11,10 @@ import { listFiles, saveUpload, deleteUpload, isKind } from '../files.ts';
 import { listWindowsVoices } from '../create/tts.ts';
 import { closeProfile, profileState } from '../browser/edge.ts';
 import { logins } from '../browser/login.ts';
+import { addAccount, getAccount, listAccounts, removeAccount, updateAccount } from '../post/accounts.ts';
+import { nextSlot, postSettingsFor, poster } from '../post/poster.ts';
+import { analyticsAt, latestMetrics, performanceSummary } from '../post/analytics.ts';
+import { engagementStats, listComments } from '../watch/engage.ts';
 import { EDGE_VOICES } from '../settings/schema.ts';
 import { paths } from '../paths.ts';
 import { getDb } from '../db.ts';
@@ -196,6 +200,55 @@ export async function buildServer(): Promise<FastifyInstance> {
   app.delete('/api/creations/:id', async req => { creator.delete(Number((req.params as any).id)); return { ok: true }; });
   app.get('/api/voices', async () => ({ edge: EDGE_VOICES, windows: await listWindowsVoices().catch(() => []) }));
 
+  // ----------------------------------------------------------- posting: accounts, queue, analytics, comments
+  app.get('/api/accounts', async () => listAccounts());
+  app.post('/api/accounts', async req => { const b = (req.body ?? {}) as any; return addAccount(String(b.name ?? ''), b.handle); });
+  app.put('/api/accounts/:id', async req => updateAccount((req.params as any).id, req.body as any));
+  app.delete('/api/accounts/:id', async req => { await removeAccount((req.params as any).id, (req.query as any)?.profile === '1'); return { ok: true }; });
+  app.post('/api/accounts/:id/login', async req => {
+    const a = getAccount((req.params as any).id);
+    if (!a) throw Object.assign(new Error('Account not found'), { statusCode: 404 });
+    const b = store.getAppSettings().browser;
+    const qr = (req.body as any)?.qr !== false;
+    return logins.open(a.profile, { url: `${b.baseUrl.replace(/\/+$/, '')}${qr ? '/login/qrcode' : b.loginPath}` });
+  });
+  app.get('/api/post/queue', async () => {
+    const all = listCreations(200);
+    const by = (...s: string[]) => all.filter((c: any) => s.includes(c.status));
+    return {
+      waiting: by('ready'), scheduled: by('approved', 'scheduled', 'posting', 'scheduled_tiktok'), posted: by('posted').slice(0, 50),
+      failed: by('post_failed'), rejected: by('rejected').slice(0, 20), poster: poster.state(),
+      comments: listComments().filter((c: any) => ['pending', 'approved', 'failed'].includes(c.status)), engagementToday: engagementStats(),
+    };
+  });
+  app.get('/api/post/:id/next-slot', async req => {
+    const c = getCreation(Number((req.params as any).id));
+    if (!c) throw Object.assign(new Error('Not found'), { statusCode: 404 });
+    const post = postSettingsFor(c), account = (req.query as any)?.account || c.account_id || post.account;
+    return { at: account ? nextSlot(post, account)?.toISOString() ?? null : null, scheduleWith: post.scheduleWith, account };
+  });
+  app.post('/api/post/:id/approve', async req => { const b = (req.body ?? {}) as any; return poster.approve(Number((req.params as any).id), { when: b.when, accountId: b.accountId }); });
+  app.post('/api/post/:id/reject', async req => poster.reject(Number((req.params as any).id)));
+  app.post('/api/post/:id/unschedule', async req => poster.unschedule(Number((req.params as any).id)));
+  app.get('/api/analytics/:account', async req => {
+    const id = (req.params as any).account;
+    const days = Math.max(1, Number((req.query as any)?.days) || 14);
+    return { at: analyticsAt(id), posts: latestMetrics(id), summary: performanceSummary(id, days) };
+  });
+  app.post('/api/analytics/:account/refresh', async req => { poster.refresh((req.params as any).account); return { ok: true, queued: true }; });
+  app.post('/api/comments/:id/approve', async req => {
+    const id = Number((req.params as any).id), text = String((req.body as any)?.text ?? '').trim().slice(0, 150);
+    const db = (await import('../db.ts')).getDb();
+    if (text) db.prepare("UPDATE engagements SET text = ? WHERE id = ? AND kind = 'comment'").run(text, id);
+    db.prepare("UPDATE engagements SET status = 'approved', error = NULL WHERE id = ? AND kind = 'comment' AND status IN ('pending', 'failed')").run(id);
+    void controller.postApprovedComments().catch(() => {});
+    return { ok: true, willPost: controller.status.state === 'idle' ? 'now' : 'after the current session' };
+  });
+  app.post('/api/comments/:id/reject', async req => {
+    (await import('../db.ts')).getDb().prepare("UPDATE engagements SET status = 'rejected' WHERE id = ? AND kind = 'comment' AND status != 'posted'").run(Number((req.params as any).id));
+    return { ok: true };
+  });
+
   // ----------------------------------------------------------- uploads (fonts, logos, music)
   app.get('/api/files/:kind', async req => {
     const kind = (req.params as any).kind;
@@ -227,14 +280,16 @@ export async function buildServer(): Promise<FastifyInstance> {
     const onQueue = (q: unknown) => send('creatorQueue', q);
     const onDeleted = (id: unknown) => send('creationDeleted', id);
     const onLogin = (st: unknown) => send('login', st);
-    logins.on('status', onLogin);
+    const onPostQueue = (q: unknown) => send('posterQueue', q);
+    const onAnalytics = (a: unknown) => send('analytics', a);
+    logins.on('status', onLogin); poster.on('queue', onPostQueue); poster.on('analytics', onAnalytics);
     controller.on('status', onStatus); controller.on('screenshot', onShot); bus.on('log', onLog);
     creator.on('update', onCreation); creator.on('queue', onQueue); creator.on('deleted', onDeleted);
     send('status', controller.snapshot());
     if (controller.lastScreenshot) send('screenshot', controller.lastScreenshot);
     socket.on('close', () => {
       controller.viewers--; controller.off('status', onStatus); controller.off('screenshot', onShot); bus.off('log', onLog);
-      logins.off('status', onLogin);
+      logins.off('status', onLogin); poster.off('queue', onPostQueue); poster.off('analytics', onAnalytics);
       creator.off('update', onCreation); creator.off('queue', onQueue); creator.off('deleted', onDeleted);
     });
   });

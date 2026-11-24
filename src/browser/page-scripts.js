@@ -119,3 +119,100 @@ function clickFirst(selectors) {
   }
   return null;
 }
+
+// ------------------------------------------------------------------ TikTok Studio (posting)
+
+/** Find the "AI-generated content" switch; turn it on if asked. Reads state only from aria-checked / checked. */
+function aiLabel(arg) {
+  const vis = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const lower = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const labels = [...document.querySelectorAll('label,span,div,p,h1,h2,h3,h4,strong')]
+    .filter(el => el.children.length <= 3 && vis(el) && arg.texts.some(t => lower(el.textContent).startsWith(t.toLowerCase())));
+  if (!labels.length) return { found: false, checked: null };
+  for (const lab of labels) {
+    let node = lab;
+    for (let i = 0; i < 7 && node; i++, node = node.parentElement) {
+      const sw = node.querySelector('[role="switch"], input[type="checkbox"], [aria-checked]');
+      if (!sw) continue;
+      const state = () => sw.getAttribute('aria-checked') === 'true' || sw.checked === true;
+      let clicked = false;
+      if (!state() && arg.turnOn) { sw.click(); clicked = true; }
+      return { found: true, checked: state(), clicked };
+    }
+  }
+  return { found: true, checked: null };
+}
+
+/** Click the first visible button whose text is one of `texts` (case-insensitive, exact). Optionally only inside dialogs. */
+function clickByText(arg) {
+  const roots = arg.inDialog ? [...document.querySelectorAll('[role="dialog"],[aria-modal="true"],.TUXModal,[class*="modal" i]')] : [document];
+  const want = arg.texts.map(t => t.toLowerCase());
+  for (const root of roots) {
+    for (const b of root.querySelectorAll('button,[role="button"],a')) {
+      const t = (b.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const r = b.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0 && want.includes(t) && !b.disabled && b.getAttribute('aria-disabled') !== 'true') { b.click(); return t; }
+    }
+  }
+  return null;
+}
+
+/** Dismiss intro / consent overlays (ported from 0xArtex/tiktok-mcp dismissBlockingModal). */
+function dismissModals(arg) {
+  const ovs = [...document.querySelectorAll('.TUXModal-overlay,.react-joyride__overlay,[role="dialog"]')].filter(o => o.getClientRects().length > 0);
+  if (!ovs.length) return { open: 0 };
+  for (const id of ['button-skip', 'button-close']) {
+    const el = document.querySelector('[data-test-id="' + id + '"]');
+    if (el && el.getClientRects().length) { el.click(); return { open: ovs.length, clicked: id }; }
+  }
+  // Never dismiss the AI-label confirmation or schedule consent: those are handled explicitly.
+  const text = ovs.map(o => o.textContent || '').join(' ');
+  if (arg.keep.some(k => text.includes(k))) return { open: ovs.length, kept: true };
+  for (const o of ovs) for (const b of o.querySelectorAll('button,[role="button"]')) {
+    const t = (b.textContent || '').trim().toLowerCase();
+    if (b.getClientRects().length && arg.labels.includes(t)) { b.click(); return { open: ovs.length, clicked: t }; }
+  }
+  return { open: ovs.length, clicked: null };
+}
+
+/** Rows of TikTok Studio's content list (ported from 0xArtex/tiktok-mcp analyzePosts). */
+function studioRows() {
+  const parseNum = t => {
+    if (t == null) return null;
+    const m = String(t).trim().replace(/,/g, '').match(/^([\d.]+)\s*([KMB])?$/i);
+    if (!m) return null;
+    let n = parseFloat(m[1]); const u = (m[2] || '').toUpperCase();
+    if (u === 'K') n *= 1e3; else if (u === 'M') n *= 1e6; else if (u === 'B') n *= 1e9;
+    return Math.round(n);
+  };
+  const seen = new Set(), rows = [];
+  for (const a of document.querySelectorAll('a[href*="/video/"]')) {
+    const href = a.getAttribute('href') || '';
+    const m = /\/video\/(\d+)/.exec(href); if (!m || seen.has(m[1])) continue; seen.add(m[1]);
+    let row = a;
+    for (let i = 0; i < 8 && row; i++) { if (row.querySelector && row.querySelector('button')) break; row = row.parentElement; }
+    const nums = [];
+    if (row) for (const el of row.querySelectorAll('*')) {
+      if (el.children.length === 0) { const t = (el.textContent || '').trim(); if (/^[\d.,]+\s*[KMB]?$/i.test(t) && t.length <= 8) nums.push(t); }
+    }
+    rows.push({ id: m[1], caption: (a.textContent || '').trim(), video_url: href.startsWith('http') ? href : location.origin + href, views: parseNum(nums[0]), likes: parseNum(nums[1]), comments: parseNum(nums[2]) });
+  }
+  return rows;
+}
+
+/** Click an engagement button (like / follow / favourite) belonging to the video in view. Never un-presses. */
+function engageClick(arg) {
+  const vis = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight; };
+  const q = (root, list) => { for (const s of list) { let els = []; try { els = [...root.querySelectorAll(s)]; } catch (e) { continue; } const el = els.find(vis); if (el) return el; } return null; };
+  let best = null, area = 0;
+  for (const v of document.querySelectorAll('video')) { const r = v.getBoundingClientRect(); const a = Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) * Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)); if (a > area) { area = a; best = v; } }
+  let el = null, node = best && best.parentElement;
+  for (let i = 0; node && i < 18 && !el; i++, node = node.parentElement) el = q(node, arg.selectors);
+  if (!el) el = q(document, arg.selectors);
+  if (!el) return { found: false };
+  const btn = el.closest('button,[role="button"]') || el;
+  const pressed = btn.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-pressed') === 'true' || /^(following|friends|mengikuti)$/i.test((btn.textContent || '').trim());
+  if (pressed) return { found: true, already: true };
+  btn.click();
+  return { found: true, clicked: true };
+}

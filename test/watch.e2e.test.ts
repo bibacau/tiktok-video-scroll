@@ -104,3 +104,37 @@ test('captcha → pause + alert, never touched; resume after user clears it', { 
   const alerts = m.db.prepare("SELECT * FROM events WHERE level = 'alert'").all();
   assert.ok(alerts.some((a: any) => /Captcha|Verification/i.test(a.message)));
 });
+
+test('engagement: likes/favourites within caps on good videos; comments wait for approval, then post', { skip: !BROWSER && 'no browser', timeout: 240_000 }, async () => {
+  const { engaged, commentsPosted } = await import('./fixture/fake-sites.ts');
+  tt.close();
+  tt = await startFakeTikTok(0, { captchaAfter: 0 });
+  const app = m.store.getAppSettings(); app.browser.baseUrl = tt.url; m.store.saveAppSettings(app);
+  const p = m.store.listPresets()[0];
+  p.data.engagement.like = { enabled: true, dailyCap: 50, sessionCap: 2, minScore: 80 };
+  p.data.engagement.favourite = { enabled: true, dailyCap: 50, sessionCap: 5, minScore: 80 };
+  p.data.engagement.follow = { enabled: false, dailyCap: 5, sessionCap: 2, minScore: 90 };
+  p.data.engagement.comment = { ...p.data.engagement.comment, enabled: true, dailyCap: 1, minScore: 85 };
+  p.data.watch.behaviour.rewatch = true;
+  m.store.updatePreset(p.id, { data: p.data });
+  engaged.length = 0;
+  const c = m.controller;
+  await c.start({ minutes: 0.7 });
+  await waitFor(() => c.status.state === 'idle', 150_000, 'session end');
+  const likes = engaged.filter(e => e.kind === 'like');
+  assert.equal(likes.length, 2, 'per-session like cap respected');
+  assert.ok(engaged.some(e => e.kind === 'favourite'));
+  assert.ok(!engaged.some(e => e.kind === 'follow'), 'follow disabled → never');
+  const recipeIds = ['7400000000000000001', '7400000000000000004', '7400000000000000006', '7400000000000000008'];
+  assert.ok(likes.every(l => recipeIds.includes(l.id)), 'only liked videos the AI scored highly');
+  const pending = m.db.prepare("SELECT * FROM engagements WHERE kind = 'comment'").all();
+  assert.equal(pending.length, 1, 'daily comment cap');
+  assert.equal(pending[0].status, 'pending', 'not posted without approval');
+  assert.equal(commentsPosted.length, 0);
+  // You approve it (and edit it) → posted between sessions
+  m.db.prepare("UPDATE engagements SET status = 'approved', text = ? WHERE id = ?").run('Nampak sedap, nak cuba!', pending[0].id);
+  const n = await c.postApprovedComments();
+  assert.equal(n, 1);
+  assert.deepEqual(commentsPosted.map(x => x.text), ['Nampak sedap, nak cuba!']);
+  assert.equal(m.db.prepare('SELECT status FROM engagements WHERE id = ?').get(pending[0].id).status, 'posted');
+});

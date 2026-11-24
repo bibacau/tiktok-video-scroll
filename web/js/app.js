@@ -10,6 +10,7 @@ import { BudgetPage } from './pages/budget.js';
 import { HistoryPage } from './pages/history.js';
 import { SettingsPage } from './pages/settings.js';
 import { CreatePage } from './pages/create.js';
+import { PostPage } from './pages/post.js';
 
 const TABS = [
   ['status', '▶ Status'], ['picks', "⭐ Picks"], ['watch', '👀 Watch'], ['schedule', '🕒 Schedule'], ['save', '💾 Save'],
@@ -74,7 +75,7 @@ function page(tab) {
     case 'save': return html`<${PresetSection} section="save" />`;
     case 'engage': return html`<${PresetSection} section="engagement" />`;
     case 'create': return html`<${CreatePage} />`;
-    case 'post': return html`<${Placeholder} phase="3" title="Posting" text="Approval queue, scheduling, accounts (QR login) and the locked AI-generated label arrive in phase 3." />`;
+    case 'post': return html`<${PostPage} />`;
     case 'presets': return html`<${PresetsPage} />`;
     case 'ai': return html`<${AiPage} />`;
     case 'budget': return html`<${BudgetPage} />`;

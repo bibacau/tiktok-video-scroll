@@ -12,6 +12,7 @@ import { paths } from '../paths.ts';
 import { rand, sleep, zoned } from '../time.ts';
 import { storyboard, type Frame } from './storyboard/index.ts';
 import { interestsForPrompt, updateInterests } from './memory.ts';
+import { engage } from './engage.ts';
 
 export class GuardHit extends Error { kind: string; constructor(kind: string, detail: string) { super(detail); this.kind = kind; } }
 export class SessionOver extends Error {}
@@ -236,6 +237,15 @@ async function handleVideo(host: SessionHost, v: VideoInfo, source: Source, c: C
     try { fs.writeFileSync(path.join(paths.media, `video-${rowId}.jpg`), storyboard(frames).jpeg); } catch { /* not critical */ }
   }
   host.update({ counts: { ...c }, thinking: doSave ? `💾 Saved (score ${score}): ${analysis?.topic ?? decision.reason ?? ''}` : `Watched, not saved (score ${score})` });
+  // Engagement (all off by default) — only on the video still in view.
+  const e = host.preset.data.engagement;
+  if (e.like.enabled || e.follow.enabled || e.favourite.enabled || e.comment.enabled) {
+    const now = await tiktok.inspect().catch(() => null);
+    if (now?.video?.key === v.key && !now.guard) {
+      const done = await engage(tiktok.browser.page!, host.sessionId, e, v, score, doSave, videoText(v, source), watch.filters.languages.join(', ') || 'any', signal);
+      if (done.length) host.update({ thinking: `❤️ ${done.join(', ')}` });
+    }
+  }
   await delay();
 }
 

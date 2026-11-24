@@ -9,6 +9,7 @@ import { hhmmToMin, zoned, sleep } from '../time.ts';
 import { runSession, SessionOver, type SessionHost } from '../watch/session.ts';
 import { generatePicks } from '../watch/picks.ts';
 import { creator } from '../create/pipeline.ts';
+import { postComment } from '../watch/engage.ts';
 import { savePlan, todaysPlan, watchedSecondsToday, type PlanEntry } from '../schedule/planner.ts';
 
 export type State = 'idle' | 'starting' | 'running' | 'paused' | 'needs_user' | 'stopping';
@@ -118,7 +119,23 @@ class Controller extends EventEmitter {
     this.afterSession(preset).catch(e => log('warn', 'picks', `Could not build picks: ${e.message}`));
   }
 
+  /** Post comments you approved — only between sessions, in the watcher's window. */
+  async postApprovedComments() {
+    if (this.status.state !== 'idle' || this.postingComments) return 0;
+    const ids = (getDb().prepare("SELECT id FROM engagements WHERE kind = 'comment' AND status = 'approved' ORDER BY id").all() as any[]).map(r => r.id);
+    if (!ids.length) return 0;
+    this.postingComments = true;
+    let n = 0;
+    try {
+      const page = await this.browser.ensure();
+      for (const id of ids) { if (this.status.state !== 'idle') break; if (await postComment(page, id)) n++; await sleep(4000 + Math.random() * 4000); }
+    } finally { this.postingComments = false; }
+    return n;
+  }
+  private postingComments = false;
+
   private async afterSession(preset: any) {
+    this.postApprovedComments().catch(e => log('warn', 'engage', e.message));
     if (!preset.data.save.autoPicks) return;
     const plan = todaysPlan();
     const more = plan.enabled && plan.entries.some(e => e.status === 'pending');

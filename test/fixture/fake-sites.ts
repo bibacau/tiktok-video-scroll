@@ -35,6 +35,9 @@ const item = (v: typeof VIDEOS[number], i: number) => `
     ${v.ad ? '<span>Sponsored</span>' : ''}${v.live ? '<span data-e2e="live-tag">LIVE</span>' : ''}
     <strong data-e2e="like-count">${(i + 1) * 1234}</strong><strong data-e2e="comment-count">${i * 12}</strong><strong data-e2e="share-count">${i * 3}</strong>
     <a href="/@${v.user}/video/${v.id}">link</a>
+    <button data-e2e="like-icon" aria-pressed="false" onclick="this.setAttribute('aria-pressed','true');fetch('/engage?kind=like&id=${v.id}')">♥</button>
+    <button data-e2e="favorite-icon" aria-pressed="false" onclick="this.setAttribute('aria-pressed','true');fetch('/engage?kind=favourite&id=${v.id}')">🔖</button>
+    <button data-e2e="feed-follow" onclick="this.textContent='Following';fetch('/engage?kind=follow&id=${v.user}')">Follow</button>
   </div>
 </article>`;
 
@@ -51,9 +54,11 @@ document.addEventListener('keydown', e => { if (e.key === 'ArrowDown') { moves++
 setTimeout(() => show(0), 300);
 </script></body></html>`;
 
+export const engaged: Array<{ kind: string; id: string }> = [];
+export const commentsPosted: Array<{ video: string; text: string }> = [];
 export function startFakeTikTok(port = 0, opts: { captchaAfter?: number } = {}): Promise<{ url: string; close: () => void }> {
   let pageLoads = 0;
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const u = new URL(req.url!, 'http://x');
     const clip = u.pathname.match(/^\/clip(\d)\.webm$/);
     if (clip) {
@@ -63,6 +68,16 @@ export function startFakeTikTok(port = 0, opts: { captchaAfter?: number } = {}):
         res.writeHead(206, { 'content-type': 'video/webm', 'content-range': `bytes ${start}-${end}/${stat.size}`, 'accept-ranges': 'bytes', 'content-length': end - start + 1 });
         fs.createReadStream(f, { start, end }).pipe(res);
       } else { res.writeHead(200, { 'content-type': 'video/webm', 'content-length': stat.size, 'accept-ranges': 'bytes' }); fs.createReadStream(f).pipe(res); }
+      return;
+    }
+    if (u.pathname === '/engage') { engaged.push({ kind: u.searchParams.get('kind')!, id: u.searchParams.get('id')! }); res.end('ok'); return; }
+    const vid = u.pathname.match(/^\/@[^/]+\/video\/(\d+)$/);
+    if (vid && req.method === 'POST') { let b = ''; for await (const c of req) b += c; commentsPosted.push({ video: vid[1], text: b }); res.end('ok'); return; }
+    if (vid) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(`<!doctype html><body><video src="/clip0.webm" muted autoplay loop style="height:400px"></video><div data-e2e="browse-video-desc">video ${vid[1]}</div>
+        <div id="list"></div><div data-e2e="comment-input"><div contenteditable="true" role="textbox" id="ci" style="min-height:30px;border:1px solid #ccc"></div></div>
+        <button data-e2e="comment-post" onclick="fetch(location.pathname,{method:'POST',body:ci.innerText}).then(()=>{const d=document.createElement('p');d.textContent=ci.innerText;list.appendChild(d);ci.textContent='';})">Post</button></body>`);
       return;
     }
     if (u.pathname === '/foryou' || u.pathname === '/') {
@@ -130,6 +145,9 @@ export function startMockLlm(port = 0): Promise<{ url: string; stats: MockStats;
         ],
         caption: 'Nasi lemak cepat 🍛 Anda suka pedas? #food', hashtags: ['#nasilemak', 'resepi', 'fyp', 'masakan', 'malaysianfood', 'extra1', 'extra2'],
       };
+    } else if (sys.includes('Write ONE short TikTok comment')) {
+      stats.byKind.comment = (stats.byKind.comment ?? 0) + 1;
+      out = { comment: 'Nampak sedap! Nak cuba resepi ni hujung minggu 😋' };
     } else if (sys.includes("Today's picks")) {
       stats.byKind.picks = (stats.byKind.picks ?? 0) + 1;
       const ids = [...sys.matchAll(/"id": (\d+)/g)].map(m => Number(m[1]));

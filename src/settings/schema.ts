@@ -70,20 +70,48 @@ export const saveSchema = s.group('Saving & picks', {
   }, { phase: 4, help: 'Set up the Telegram bot / email account in Settings.' }),
 });
 
-const capGroup = (label: string, daily: number, session: number) => s.group(label, {
+const capGroup = (label: string, daily: number, session: number, minScore: number, when: string) => s.group(label, {
   enabled: s.bool('Enabled', false), dailyCap: s.number('Daily cap', daily, 0, 1000), sessionCap: s.number('Per-session cap', session, 0, 1000),
+  minScore: s.slider(`Only when the AI score is at least`, minScore, 0, 100, { help: when }),
 });
 export const engagementSchema = s.group('Engagement', {
-  like: capGroup('Like', 30, 10),
-  follow: capGroup('Follow', 5, 2),
-  favourite: capGroup('Save to favourites', 10, 5),
+  like: capGroup('Like', 30, 10, 75, 'Likes only videos the AI watched and scored this high.'),
+  follow: capGroup('Follow', 5, 2, 90, 'Follows a creator at most once.'),
+  favourite: capGroup('Save to favourites', 10, 5, 80, 'Also only videos that were saved to your research.'),
   comment: s.group('Comments', {
     enabled: s.bool('Enabled', false),
-    requireApproval: s.locked('Require my approval for each comment', 'Every comment waits in the approval queue.'),
+    requireApproval: s.locked('Require my approval for each comment', 'Every comment waits in the approval queue (Post → Queue). Nothing is posted without you.'),
     dailyCap: s.number('Daily cap', 5, 0, 100),
-    style: s.textarea('Comment style', 'Short, friendly, relevant to the video. No links, no self-promotion.'),
+    minScore: s.slider('Only when the AI score is at least', 85, 0, 100),
+    style: s.textarea('Comment style', 'Short, friendly, relevant to the video, in the video\'s language. No links, no self-promotion, no questions about personal details.'),
   }),
-}, { phase: 3, help: 'All off by default. Engagement only happens on videos the AI chose to watch.' });
+}, { help: 'All off by default. Engagement only happens on videos the AI chose to watch, in the watcher\'s Edge window.' });
+
+export const postSchema = s.group('Posting', {
+  mode: s.select('Posting mode', 'approval', [
+    { value: 'approval', label: 'Save for my approval (I choose when to post)' },
+    { value: 'schedule', label: 'Schedule automatically after I approve' },
+    { value: 'auto', label: 'Auto-post (no approval)' }],
+    { warnValues: { auto: 'Auto-post publishes every finished video without you checking it first. Mistakes (wrong facts, odd voice, bad visuals) go public. Only use this once you trust the output.' } }),
+  account: s.account('TikTok account', { help: 'Add accounts in Post → Accounts. Each has its own Edge profile.' }),
+  times: s.list('Posting times (24h, HH:MM)', ['12:30', '20:30'], { pattern: '^([01]\\d|2[0-3]):[0-5]\\d$', help: 'Videos are given the next free time. Dashboard timezone.' }),
+  maxPerDay: s.number('Max posts per day (per account)', 2, 1, 20),
+  scheduleWith: s.select('How scheduled posts are published', 'tiktok', [
+    { value: 'tiktok', label: "TikTok's own scheduler (uploaded now, published by TikTok — your PC can be off)" },
+    { value: 'app', label: 'This app posts at the time (your PC and the app must be on)' }],
+    { help: "TikTok's scheduler needs the time to be 15 minutes to 10 days ahead." }),
+  privacy: s.select('Who can see the post', 'public', [{ value: 'public', label: 'Everyone' }, { value: 'friends', label: 'Friends' }, { value: 'private', label: 'Only me' }]),
+  allowComments: s.bool('Allow comments', true),
+  allowDuet: s.bool('Allow Duet', true),
+  allowStitch: s.bool('Allow Stitch', true),
+  aiLabel: s.locked('Label as AI-generated content', "Always on. Every upload gets TikTok's AI-generated label; if it can't be turned on and confirmed, the post is cancelled."),
+  analytics: s.group('Performance tracking', {
+    enabled: s.bool('Read post performance from TikTok Studio', true),
+    refreshHours: s.number('Refresh every', 6, 1, 72, { unit: 'hours' }),
+    feedIntoPlanning: s.bool("Use performance when planning tomorrow's videos", true),
+    days: s.number('Look back', 14, 1, 90, { unit: 'days' }),
+  }),
+});
 
 export const EDGE_VOICES = [
   { value: 'ms-MY-YasminNeural', label: 'Malay — Yasmin (female)' }, { value: 'ms-MY-OsmanNeural', label: 'Malay — Osman (male)' },
@@ -169,6 +197,7 @@ export const presetSchema = s.group('Preset', {
   save: saveSchema,
   engagement: engagementSchema,
   create: createSchema,
+  post: postSchema,
 });
 
 // ================================ APP =========================================
@@ -193,6 +222,27 @@ export const DEFAULT_SELECTORS = {
   captchaTexts: ['Verify to continue', 'Drag the slider', 'Select 2 objects', 'Sahkan untuk teruskan'],
   loginModal: ['[data-e2e="login-modal"]', '#loginContainer', '[data-e2e="login-title"]'],
   loginTexts: ['Log in to TikTok', 'Log in to follow', 'Log masuk ke TikTok'],
+  likeButton: ['[data-e2e="browse-like-icon"]', '[data-e2e="like-icon"]', 'button[aria-label*="like" i]'],
+  followButton: ['[data-e2e="browse-follow"]', '[data-e2e="feed-follow"]', '[data-e2e="follow-button"]', 'button[aria-label*="follow" i]'],
+  favouriteButton: ['[data-e2e="undefined-icon"]', '[data-e2e="favorite-icon"]', '[data-e2e="collect-icon"]', 'button[aria-label*="favourite" i]', 'button[aria-label*="favorite" i]'],
+  commentInput: ['[data-e2e="comment-input"] [contenteditable="true"]', '[data-e2e="comment-input"]', 'div[contenteditable="true"][role="textbox"]'],
+  commentPost: ['[data-e2e="comment-post"]', 'button[aria-label*="post" i]'],
+};
+
+/** TikTok Studio upload page (editable in Settings → Posting page selectors). */
+export const DEFAULT_POST_SELECTORS = {
+  uploadPath: '/tiktokstudio/upload?from=webapp',
+  contentPath: '/tiktokstudio/content',
+  fileInput: ['input[type="file"]'],
+  caption: ['[data-e2e="upload-editor-caption"] [contenteditable="true"]', '[data-e2e="upload-editor-caption"]', 'div[contenteditable="true"][role="textbox"]', 'div[contenteditable="true"]'],
+  postButton: ['[data-e2e="post_video_button"]', 'button[data-e2e="post_video_button"]'],
+  postButtonTexts: ['Post', 'Schedule', 'Siarkan', 'Jadualkan'],
+  showMoreTexts: ['Show more', 'More options', 'Advanced settings', 'Tunjukkan lagi'],
+  aiLabelTexts: ['AI-generated content', 'AI generated content', 'Kandungan yang dijana AI'],
+  aiConfirmTexts: ['Turn on', 'Confirm', 'OK', 'Got it', 'Hidupkan'],
+  successUrl: 'tiktokstudio/(content|posts)',
+  successTexts: ['posted', 'uploaded', 'scheduled', 'published'],
+  modalDismissTexts: ['cancel', 'skip', 'skip all', 'got it', 'no thanks', 'not now', 'maybe later', 'close', 'dismiss', 'done'],
 };
 
 export const VISION_PROVIDERS = [
@@ -313,6 +363,7 @@ export const appSchema = s.group('App', {
     smtpHost: s.text('SMTP host', ''), smtpPort: s.number('SMTP port', 587, 1, 65535),
     smtpUser: s.text('SMTP user', ''), smtpPassword: s.secret('SMTP password'), emailTo: s.text('Send to', ''),
   }, { phase: 4, collapsed: true }),
+  postSelectors: s.json('Posting page selectors (TikTok Studio)', DEFAULT_POST_SELECTORS, { rows: 16, help: 'Advanced. Fix here if TikTok changes its upload page.' }),
   selectors: s.json('TikTok page selectors', DEFAULT_SELECTORS, { rows: 20, help: 'Advanced. If TikTok changes its website, fix selectors here without touching code.' }),
 });
 

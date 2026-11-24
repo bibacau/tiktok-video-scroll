@@ -2,6 +2,7 @@ import { getDb } from '../db.ts';
 import { chatJson } from '../llm/client.ts';
 import { getPrompt, render } from '../settings/prompts.ts';
 import { getMemory } from '../settings/store.ts';
+import { performanceSummary } from '../post/analytics.ts';
 import { interestsForPrompt } from '../watch/memory.ts';
 import { getPicks } from '../watch/picks.ts';
 import { log } from '../log.ts';
@@ -20,7 +21,13 @@ export function researchNotes(day: string, limit = 12) {
   });
 }
 
-export async function planIdeas(day: string, create: any, count: number, topic?: string): Promise<Idea[]> {
+/** How our own recent posts performed (Phase 3 analytics), if the preset feeds it into planning. */
+function performanceFor(post: any): string {
+  if (!post?.analytics?.enabled || !post.analytics.feedIntoPlanning) return '(not used)';
+  return performanceSummary(post.account || null, post.analytics.days);
+}
+
+export async function planIdeas(day: string, create: any, count: number, topic?: string, post?: any): Promise<Idea[]> {
   const b = create.basics;
   const recent = (getDb().prepare('SELECT title FROM creations ORDER BY id DESC LIMIT 30').all() as any[]).map(r => r.title).filter(Boolean);
   const { json } = await chatJson({
@@ -31,6 +38,7 @@ export async function planIdeas(day: string, create: any, count: number, topic?:
       research: b.useResearch ? JSON.stringify(researchNotes(day), null, 1) : '(not used)',
       interests: interestsForPrompt(20), recent: recent.join('\n') || '(none)', banned_topics: create.script.bannedTopics.join(', ') || '(none)',
       persona: getMemory().persona,
+      performance: performanceFor(post),
     }),
   });
   const ideas: Idea[] = (Array.isArray(json?.ideas) ? json.ideas : []).filter((i: any) => i && typeof i.title === 'string').slice(0, count);

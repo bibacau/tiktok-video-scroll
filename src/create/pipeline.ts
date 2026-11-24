@@ -15,6 +15,7 @@ import { renderVideo } from './render.ts';
 
 export type Step = 'script' | 'voice' | 'visuals' | 'render';
 const STEPS: Step[] = ['script', 'voice', 'visuals', 'render'];
+const LOCKED = ['approved', 'scheduled', 'posting', 'scheduled_tiktok', 'posted'];
 interface SceneAsset { voice: Speech | null; voiceKey: string | null; visual: Visual | null }
 interface Assets { scenes: SceneAsset[]; credits: string[]; durations?: number[] }
 
@@ -59,6 +60,8 @@ class Creator extends EventEmitter {
     this.current = null; this.busy = false; this.emit('queue', this.state());
   }
   state() { return { current: this.current, queued: this.queue.map(q => q.label) }; }
+  /** Used by the poster to update posting fields. */
+  patch(id: number, p: Record<string, unknown>) { this.update(id, p); }
 
   /** Plan `count` ideas and build a video for each. */
   createVideos(opts: { presetId?: string; count?: number; topic?: string }) {
@@ -77,7 +80,7 @@ class Creator extends EventEmitter {
     this.enqueue(`Plan ${count} video(s)`, async () => {
       ids.forEach(id => this.update(id, { status: 'planning', stage: 'Planning ideas…' }));
       let ideas: Idea[];
-      try { ideas = await usageContext.run({ ref: `creation:${ids[0]}` }, () => planIdeas(z.day, create, count, opts.topic)); } catch (e: any) {
+      try { ideas = await usageContext.run({ ref: `creation:${ids[0]}` }, () => planIdeas(z.day, create, count, opts.topic, preset.data.post)); } catch (e: any) {
         ids.forEach(id => this.update(id, { status: 'failed', stage: 'Planning failed', error: e.message }));
         throw e;
       }
@@ -95,6 +98,7 @@ class Creator extends EventEmitter {
   rebuild(id: number, from: Step) {
     const c = getCreation(id);
     if (!c) throw Object.assign(new Error('Not found'), { statusCode: 404 });
+    if (LOCKED.includes(c.status)) throw Object.assign(new Error(`This video is ${c.status.replace('_', ' ')} — move it back to the approval queue first`), { statusCode: 409 });
     if (from === 'script' && !c.idea) throw Object.assign(new Error('This video has no idea yet'), { statusCode: 400 });
     if (from !== 'script' && !c.script) throw Object.assign(new Error('Write the script first'), { statusCode: 400 });
     this.update(id, { status: 'queued', stage: `Waiting to redo ${from}`, error: null });
@@ -118,6 +122,8 @@ class Creator extends EventEmitter {
   }
 
   delete(id: number) {
+    const c = getCreation(id);
+    if (c && ['posting', 'approved', 'scheduled_tiktok'].includes(c.status)) throw Object.assign(new Error(`Can't delete while ${c.status.replace('_', ' ')}`), { statusCode: 409 });
     getDb().prepare('DELETE FROM creations WHERE id = ?').run(id);
     fs.rmSync(dirFor(id), { recursive: true, force: true });
     this.emit('deleted', id);

@@ -12,7 +12,7 @@ Everything is a setting: what to watch, when and for how long, what to save, the
 |---|---|---|
 | 1 | Settings system, dashboard, watcher, picks, schedule, budget tracking | ✅ done |
 | 2 | Video creator (plan, script, voice, visuals, subtitles, music, logo) — local only, no upload | ✅ done |
-| 3 | Posting (approval queue, scheduling, QR accounts, **AI-generated label always on**), analytics, engagement | |
+| 3 | Posting (approval queue, scheduling, QR accounts, **AI-generated label always on**), analytics, engagement | ✅ done |
 | 4 | Notifications (Telegram/email), polish | |
 
 ## What you need to do by hand (one time)
@@ -167,16 +167,47 @@ Everything is set per preset under *Create → Creation settings*: video instruc
 
 **Tested here with fakes:** the whole pipeline is tested with real ffmpeg rendering, but against fake AI, voice, Pexels and image servers. The real Edge voice service, Pexels/Pixabay, OpenAI images and Replicate couldn't be reached from where this was built, so check each once with a short video.
 
+## Posting (phase 3)
+
+### 1. Add your TikTok account(s)
+*Post → Accounts* → type a name → **Add** → **Log in (QR code)**. A **normal Edge window** (no automation) opens on your PC with TikTok's QR login page. On your phone, open the TikTok app, tap its QR-scan icon and scan the code. The dashboard shows ✅ when it notices the login (within about 30 seconds, or when you close the window). Each account has its own Edge profile (`data/edge-profiles/acct-…`), so logins never mix. Add as many accounts as you like.
+
+### 2. Choose how videos get posted (per preset, *Post → Posting settings*)
+- **Account:** which TikTok account this preset posts to.
+- **Posting mode:**
+  - **Save for my approval** (default): finished videos wait in *Post → Queue*. For each one you choose **Approve → next slot**, **Post now**, a specific time, or **Reject**.
+  - **Schedule automatically after I approve:** the same, but approving always takes the next free posting time.
+  - **Auto-post:** finished videos are approved and scheduled without you. The dashboard shows a clear warning while this is on.
+- **Posting times** (e.g. 12:30 and 20:30) and **max posts per day**. Videos get the next free time.
+- **How scheduled posts are published:**
+  - *TikTok's own scheduler* (default): the video is uploaded right away and TikTok publishes it at the time, so your PC can be off. TikTok needs the time to be 15 minutes to 10 days ahead.
+  - *This app*: it uploads at the time, so the PC and app must be on.
+- **Who can see it**, and whether comments, Duet and Stitch are allowed.
+- **🔒 AI-generated label: always on.** Every upload turns on TikTok's "AI-generated content" switch and checks it is on, again right before pressing Post. If it can't be confirmed, **the video is not posted** and shows as failed with the reason.
+
+### 3. Performance → tomorrow's plan
+Every few hours (setting) the app reads each account's post list in TikTok Studio (views, likes, comments) and keeps a history (*Post → Analytics*). With *Use performance when planning* on, tomorrow's video planning gets a short summary of your best and weakest recent videos and their hooks. You can see exactly what it gets under *What tomorrow's planning sees*.
+
+### Engagement (optional, all off by default: *Engage* tab)
+While watching, the agent can **like**, **save to favourites** and **follow**, each with a daily cap, a per-session cap and a minimum AI score. It only does this on videos the AI actually watched and rated highly, never presses a button that's already pressed (so nothing is un-liked), and follows a creator at most once. **Comments** are only *drafted* by the AI. Each one waits in *Post → Queue → Comments* where you can edit, approve or reject it. Approved comments are posted between watching sessions.
+
+### Safety and honesty notes for posting
+- If TikTok shows a login or verification screen, posting stops with *"not logged in / verification"*. The app never logs in or solves checks itself; use the account's **Log in** button.
+- If TikTok doesn't confirm a post, the video is marked *"Not confirmed — check TikTok Studio before retrying"* instead of being posted again automatically (to avoid duplicates).
+- If TikTok's scheduler or the audience setting can't be set and checked, the upload is cancelled, so a scheduled or private post is never published immediately or publicly by mistake.
+- Only videos made by this app (from `data/renders`) can be uploaded.
+- **Tested with fakes:** the upload flow, AI label, audience, slots, modes, analytics and engagement are all tested against a fake TikTok Studio and a fake feed that mirror the real pages as far as I know them. The real TikTok Studio couldn't be reached from where this was built. Try your first post with *Only me*, and check the label and caption in TikTok before going public. If TikTok's pages differ, fix *Settings → Posting page selectors* without changing code.
+
 ## Safety rules (built in, not settings)
 
 - **Captcha / login / verification on screen → the agent pauses and alerts you** (dashboard banner, sound and vibration on phones). It never tries to solve or get around them. Fix it yourself in the Edge window and press **Resume**.
 - **Watchdog:** if Edge crashes or stops responding, it is restarted and the session continues. There's a limit on restarts per session, which you can set in Settings → Browser.
 - The browser profile is used only by this app. Your normal Edge is never touched.
-- Engagement (likes/follows/favourites/comments) is **off by default**, and comments always need your approval (phase 3).
+- Engagement (likes/follows/favourites/comments) is **off by default**, and every comment needs your approval.
 - **Original videos only:** videos are made only from your text, stock voices, licensed stock footage (Pexels/Pixabay), AI images or video, and your own music and logo. Video downloads are only allowed from Pexels, Pixabay and Replicate, and TikTok's servers are always refused, so other people's videos can't be downloaded or re-uploaded.
 - **No cloned faces or voices:** only stock TTS voices (no voice cloning). Every AI image or video prompt gets a fixed rule: no real, famous or identifiable people, no logos, no text.
 - Banned words are checked in code: a script that contains one is rewritten once, then the words are removed.
-- Phase 3: every upload gets TikTok's **AI-generated label**, and it can't be turned off.
+- Every upload gets TikTok's **AI-generated label**. It can't be turned off, and if it can't be confirmed the post is cancelled.
 - Setting more than 4 hours a day shows a warning about ban risk, but it's allowed.
 
 ## Budget
@@ -185,23 +216,24 @@ Every AI call is logged with tokens and cost in **RM** (exchange rate in Setting
 
 ## If TikTok changes its website
 
-All page selectors are in *Settings → TikTok page selectors* (JSON). If something stops being detected, you can fix it there without changing code.
+All page selectors are in *Settings → TikTok page selectors* and *Settings → Posting page selectors* (JSON). If something stops being detected, you can fix it there without changing code.
 
 ## Files
 
 ```
 scripts/launch.mjs       start / stop / create shortcuts (node.exe only); scripts/supervise.mjs keeps it running
-src/                     server (TypeScript, run directly with tsx)
+src/                     server (TypeScript, run directly by Node)
   settings/              settings schema (one place defines defaults, validation and the dashboard forms), presets, prompts
   prompts/*.md           default prompts (your edits are stored in the database; "Reset" restores these)
   browser/               Edge launch + watchdog, tiktok.com page driving, captcha/login detection
   watch/                 watch session loop, storyboard, interest memory, picks
   create/                video creator: plan/script, voices (Edge/Windows), visuals (slides/stock/AI), ffmpeg render, job pipeline
+  post/                  accounts, TikTok Studio uploader (AI label), approval queue / slots / modes, analytics
   schedule/              daily planner (sessions, breaks, jitter, windows)
   llm/                   OpenAI-compatible client, budget ledger
 web/                     dashboard (Preact, no build step)
 data/                    YOUR data — database, API keys (secrets.json), Edge profiles, media. Never commit it.
-test/                    tests (fake tiktok.com + fake AI API)
+test/                    tests (fake tiktok.com, fake TikTok Studio, fake AI / voice / stock / image APIs)
 ```
 
 ## Developing

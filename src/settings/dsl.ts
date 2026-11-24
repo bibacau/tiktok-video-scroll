@@ -21,6 +21,7 @@ export type Field =
   | (Base & { type: 'windows'; default: Record<string, Array<{ start: string; end: string }>> })
   | (Base & { type: 'json'; default: unknown; rows?: number })
   | (Base & { type: 'file'; default: string; kind: 'fonts' | 'logos' | 'music' })
+  | (Base & { type: 'account'; default: string })
   | (Base & { type: 'group'; fields: Record<string, Field>; collapsed?: boolean });
 
 export const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
@@ -43,6 +44,7 @@ export const s = {
   list: (label: string, def: string[] = [], o: Opts = {}): Field => ({ type: 'list', label, default: def, ...o } as Field),
   weights: (label: string, def: Record<string, number>, options: Array<Option | string>, o: Opts = {}): Field => ({ type: 'weights', label, default: def, options: options.map(opt), ...o } as Field),
   windows: (label: string, def: Record<string, Array<{ start: string; end: string }>>, o: Opts = {}): Field => ({ type: 'windows', label, default: def, ...o } as Field),
+  account: (label: string, o: Opts = {}): Field => ({ type: 'account', label, default: '', ...o } as Field),
   file: (label: string, kind: 'fonts' | 'logos' | 'music', o: Opts = {}): Field => ({ type: 'file', label, default: '', kind, ...o } as Field),
   json: (label: string, def: unknown, o: Opts = {}): Field => ({ type: 'json', label, default: def, rows: 10, ...o } as Field),
   group: (label: string, fields: Record<string, Field>, o: Opts = {}): Field => ({ type: 'group', label, fields, ...o } as Field),
@@ -69,6 +71,7 @@ export function coerce(field: Field, value: unknown): any {
       if (typeof value !== 'string') return field.default;
       return field.maxLength ? value.slice(0, field.maxLength) : value.slice(0, 50_000);
     }
+    case 'account': return typeof value === 'string' && /^[\w-]{0,40}$/.test(value) ? value : '';
     case 'file': return typeof value === 'string' && !/[\\/]|\.\./.test(value) ? value.slice(0, 200) : '';
     case 'time': return typeof value === 'string' && TIME.test(value) ? value : field.default;
     case 'number': case 'slider': {
@@ -86,7 +89,8 @@ export function coerce(field: Field, value: unknown): any {
       return [...new Set(value.filter(v => typeof v === 'string' && field.options.some(o => o.value === v)))];
     case 'list': {
       if (!Array.isArray(value)) return structuredClone(field.default);
-      const items = value.filter(v => typeof v === 'string').map(v => v.trim()).filter(Boolean);
+      const re = (field as any).pattern ? new RegExp((field as any).pattern) : null;
+      const items = value.filter(v => typeof v === 'string').map(v => v.trim()).filter(v => v && (!re || re.test(v)));
       return [...new Set(items)].slice(0, field.maxItems ?? 500);
     }
     case 'weights': {
@@ -120,6 +124,7 @@ export function warnings(field: Field, value: any, path = ''): Array<{ path: str
   } else if ((field.type === 'number' || field.type === 'slider') && field.warn) {
     if ((field.warn.above !== undefined && value > field.warn.above) || (field.warn.below !== undefined && value < field.warn.below)) out.push({ path, message: field.warn.message });
   } else if (field.type === 'bool' && field.warnWhenOn && value === true) out.push({ path, message: field.warnWhenOn });
+  else if (field.type === 'select' && (field as any).warnValues?.[value]) out.push({ path, message: (field as any).warnValues[value] });
   return out;
 }
 

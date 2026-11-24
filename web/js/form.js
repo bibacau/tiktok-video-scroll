@@ -26,6 +26,7 @@ export function Group({ field, value, onChange, nested = false, siblings }) {
 
 function FieldRow({ field, value, onChange }) {
   const warn = field.type === 'bool' && field.warnWhenOn && value ? field.warnWhenOn
+    : field.type === 'select' && field.warnValues?.[value] ? field.warnValues[value]
     : (field.type === 'number' || field.type === 'slider') && field.warn && ((field.warn.above !== undefined && value > field.warn.above) || (field.warn.below !== undefined && value < field.warn.below)) ? field.warn.message : null;
   const inline = ['bool', 'locked'].includes(field.type);
   return html`<div class=${`field ${inline ? 'inline' : ''}`}>
@@ -81,6 +82,7 @@ function Control({ field: f, value, onChange }) {
     case 'windows': return html`<${Windows} value=${value || {}} onChange=${onChange} />`;
     case 'json': return html`<${JsonInput} value=${value} rows=${f.rows} onChange=${onChange} />`;
     case 'file': return html`<${FilePicker} kind=${f.kind} value=${value || ''} onChange=${onChange} />`;
+    case 'account': return html`<${AccountPicker} value=${value || ''} onChange=${onChange} />`;
     default: return html`<span class="muted">unsupported field</span>`;
   }
 }
@@ -182,4 +184,14 @@ function FilePicker({ kind, value, onChange }) {
       ${kind === 'logos' && value ? html`<img class="logoprev" src=${`/uploads/logos/${encodeURIComponent(value)}`} alt="" />` : null}
     </div>
   </div>`;
+}
+
+function AccountPicker({ value, onChange }) {
+  const [list, setList] = useState(null);
+  useEffect(() => { get('/api/accounts').then(setList).catch(() => setList([])); }, []);
+  if (!list) return html`<span class="muted">Loading…</span>`;
+  return html`<div class="row"><select value=${value} onChange=${e => onChange(e.target.value)}>
+    <option value="">— choose an account —</option>
+    ${list.map(a => html`<option value=${a.id}>${a.name}${a.handle ? ` (@${a.handle})` : ''}${a.login.loggedIn ? '' : ' — not logged in'}</option>`)}
+  </select><a class="small" href="#post" onClick=${() => { try { localStorage.setItem('postTab', 'accounts'); } catch {} }}>manage</a></div>`;
 }

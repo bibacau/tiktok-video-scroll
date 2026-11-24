@@ -39,6 +39,15 @@ CREATE TABLE IF NOT EXISTS creations (
   title TEXT, idea TEXT, script TEXT, assets TEXT, caption TEXT, hashtags TEXT, video_path TEXT, thumb_path TEXT,
   duration REAL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS creations_day ON creations(day);
+CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, handle TEXT, created_at TEXT NOT NULL, notes TEXT);
+CREATE TABLE IF NOT EXISTS metrics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, account_id TEXT NOT NULL, video_id TEXT NOT NULL, video_url TEXT, caption TEXT,
+  creation_id INTEGER, at TEXT NOT NULL, views INTEGER, likes INTEGER, comments INTEGER);
+CREATE INDEX IF NOT EXISTS metrics_video ON metrics(account_id, video_id);
+CREATE TABLE IF NOT EXISTS engagements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, day TEXT NOT NULL, session_id INTEGER, kind TEXT NOT NULL,
+  video_key TEXT, video_url TEXT, author TEXT, status TEXT NOT NULL, text TEXT, error TEXT);
+CREATE INDEX IF NOT EXISTS engagements_day ON engagements(day, kind);
 CREATE TABLE IF NOT EXISTS day_plans (day TEXT PRIMARY KEY, preset_id TEXT, signature TEXT, plan TEXT NOT NULL);
 `;
 
@@ -48,7 +57,7 @@ export function getDb(): DatabaseSync {
     db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     db.exec(SCHEMA);
     // migrations (ignore "duplicate column")
-    for (const sql of ['ALTER TABLE usage ADD COLUMN ref TEXT']) { try { db.exec(sql); } catch { /* already there */ } }
+    for (const sql of ['ALTER TABLE usage ADD COLUMN ref TEXT', ...['account_id', 'post_at', 'posted_at', 'post_url', 'post_id', 'post_error', 'approved_at', 'post_method'].map(c => `ALTER TABLE creations ADD COLUMN ${c} TEXT`)]) { try { db.exec(sql); } catch { /* already there */ } }
   }
   return db;
 }

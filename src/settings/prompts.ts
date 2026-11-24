@@ -11,10 +11,11 @@ export const PROMPTS: Array<{ key: string; title: string; step: string; variable
     variables: ['persona', 'instructions', 'fields', 'video', 'first_decision', 'frames_note'] },
   { key: 'vision_describe', title: 'Vision helper: describe frames', step: 'vision', variables: [] },
   { key: 'create_plan', title: 'Create: plan video ideas', step: 'plan',
-    variables: ['persona', 'instructions', 'count', 'language', 'tone', 'audience', 'research', 'interests', 'recent', 'banned_topics'] },
+    variables: ['persona', 'instructions', 'count', 'language', 'tone', 'audience', 'research', 'interests', 'recent', 'banned_topics', 'performance'] },
   { key: 'create_script', title: 'Create: write the script', step: 'script',
     variables: ['instructions', 'idea', 'research', 'language', 'tone', 'audience', 'length', 'scenes', 'scene_seconds', 'hook_style', 'structure', 'cta', 'voice', 'banned_words', 'banned_topics', 'caption_rules', 'hashtag_count'] },
   { key: 'create_image', title: 'Create: AI image / video prompt', step: 'image', variables: ['scene', 'style'] },
+  { key: 'engage_comment', title: 'Engage: draft a comment (always needs your approval)', step: 'analyze', variables: ['style', 'languages', 'video'] },
   { key: 'picks', title: "Today's picks", step: 'picks',
     variables: ['persona', 'criteria', 'count', 'candidates', 'instructions'] },
 ];

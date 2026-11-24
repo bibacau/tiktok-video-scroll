@@ -14,6 +14,9 @@ Language: {{language}} · Tone: {{tone}} · Audience: {{audience}}
 ## Interests learned
 {{interests}}
 
+## How our own recent posts performed (do more of what worked, less of what didn't)
+{{performance}}
+
 ## Videos already made recently (don't repeat these)
 {{recent}}
 
